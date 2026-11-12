@@ -1,0 +1,44 @@
+# Builds the web version on every push to main and publishes it on GitHub Pages
+# (https://<user>.github.io/<repo>/). Only the web target is built: the desktop exe needs ../gameServer,
+# which isn't on GitHub. One-time setup: repo Settings → Pages → Source: "GitHub Actions".
+name: Web version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:  # a newer push replaces a deployment still waiting
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the web version
+        run: ./gradlew wasmJsBrowserDistribution --console=plain
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/dist/wasmJs/productionExecutable
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

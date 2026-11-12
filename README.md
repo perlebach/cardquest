@@ -52,6 +52,8 @@ A manual server address goes to `~/.cardquest/sync.properties` as `server=host` 
 ```
 
 The same game compiled to WebAssembly (Kotlin/Wasm); the folder above is plain static files, any static hosting works.
+GitHub builds and publishes it on every push to `main` (`.github/workflows/web.yml`, GitHub Pages). It doesn't need
+`../gameServer` – without that folder only the desktop target can't be built.
 Games are saved in the browser's localStorage (same JSON as the save files; this browser on this device only).
 `?dev` in the address shows the 🛠️ Dev tab. A browser has no system fonts, so the emoji and symbols the game uses come
 with it (`src/wasmJsMain/composeResources/font`) – after adding new emoji or symbols run `python tools/web-fonts.py`
