@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -667,66 +668,72 @@ private fun DecisionPanel(ui: BattleUi, f: Fighter, modifier: Modifier) {
 private fun BoxScope.ResultOverlay(model: AppModel, fight: ActiveFight, outcome: Outcome) {
     val s = model.state
     Box(Modifier.matchParentSize().background(Color(0xCC000000)), contentAlignment = Alignment.Center) {
+        // the results scroll if the window is too low for them; the buttons below always stay visible
         Column(
-            Modifier.widthIn(max = 900.dp).clip(RoundedCornerShape(24.dp)).background(Palette.panel)
+            Modifier.padding(16.dp).widthIn(max = 900.dp).clip(RoundedCornerShape(24.dp)).background(Palette.panel)
                 .border(4.dp, if (outcome is Outcome.Won) Palette.gold else Palette.panelLight, RoundedCornerShape(24.dp)).padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            when (outcome) {
-                is Outcome.Won -> {
-                    val r = outcome.rewards
-                    Text("🏆 Victory!", fontSize = 44.sp, fontWeight = FontWeight.Black, color = Palette.gold)
-                    if (r.firstClear) Text("First time beating ${fight.stage.key}! Double gold!", color = Palette.good, fontSize = 16.sp)
-                    StarsLine(r.fightStars, 30)
-                    Text(
-                        listOfNotNull(
-                            "won",
-                            if (fight.battle.noCardLost) "no card lost" else null,
-                            if (!fight.battle.playerUsedSkill) "no skills used" else null,
-                        ).joinToString(" · ") + if (r.fightStars > r.starsBefore) "  – new best! 🎉" else "",
-                        color = if (r.fightStars > r.starsBefore) Palette.gold else Palette.textDim, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                    )
-                    for (m in r.milestones) Text(
-                        "🏅 ${m.stars} stars in ${Dungeons.all.first { it.id == fight.stage.dungeon }.name}! Reward: ${m.label}",
-                        color = Palette.good, fontSize = 18.sp, fontWeight = FontWeight.Black,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text("🪙 +${fmt(r.gold)} gold     ⭐ +${fmt(r.playerXp)} player XP", fontSize = 22.sp, color = Palette.text, fontWeight = FontWeight.Bold)
-                    if (r.playerLevelAfter > r.playerLevelBefore) Text("🎉 Player level up! You are now level ${r.playerLevelAfter}!", fontSize = 20.sp, color = Palette.good, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(12.dp))
-                    Text("Every card in the party got 📈 +${fmt(r.cardXp)} XP", color = Palette.text)
-                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for ((id, lv) in r.cardLevels) {
-                            val c = s.card(id) ?: continue
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CardFace(c.look(), width = 92.dp, badge = if (lv.second > lv.first) "LEVEL UP!" else null)
-                                if (lv.second > lv.first) Text("Lv ${lv.first} ➜ ${lv.second}", color = Palette.good, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    val newCards = r.drops + r.milestoneCards
-                    if (newCards.isEmpty()) Text("No new cards this time.", color = Palette.textDim)
-                    else {
-                        Text("🎁 New cards!", fontSize = 22.sp, color = Palette.gold, fontWeight = FontWeight.Black)
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                when (outcome) {
+                    is Outcome.Won -> {
+                        val r = outcome.rewards
+                        Text("🏆 Victory!", fontSize = 44.sp, fontWeight = FontWeight.Black, color = Palette.gold)
+                        if (r.firstClear) Text("First time beating ${fight.stage.key}! Double gold!", color = Palette.good, fontSize = 16.sp)
+                        StarsLine(r.fightStars, 30)
+                        Text(
+                            listOfNotNull(
+                                "won",
+                                if (fight.battle.noCardLost) "no card lost" else null,
+                                if (!fight.battle.playerUsedSkill) "no skills used" else null,
+                            ).joinToString(" · ") + if (r.fightStars > r.starsBefore) "  – new best! 🎉" else "",
+                            color = if (r.fightStars > r.starsBefore) Palette.gold else Palette.textDim, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        )
+                        for (m in r.milestones) Text(
+                            "🏅 ${m.stars} stars in ${Dungeons.all.first { it.id == fight.stage.dungeon }.name}! Reward: ${m.label}",
+                            color = Palette.good, fontSize = 18.sp, fontWeight = FontWeight.Black,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text("🪙 +${fmt(r.gold)} gold     ⭐ +${fmt(r.playerXp)} player XP", fontSize = 22.sp, color = Palette.text, fontWeight = FontWeight.Bold)
+                        if (r.playerLevelAfter > r.playerLevelBefore) Text("🎉 Player level up! You are now level ${r.playerLevelAfter}!", fontSize = 20.sp, color = Palette.good, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Every card in the party got 📈 +${fmt(r.cardXp)} XP", color = Palette.text)
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            newCards.forEachIndexed { i, c ->
-                                val a = remember { Animatable(0f) }
-                                LaunchedEffect(Unit) { delay(300L + i * 250L); a.animateTo(1f, tween(450)) }
-                                CardFace(c.look(), width = 110.dp, badge = "NEW!", modifier = Modifier.scale(a.value).alpha(a.value))
+                            for ((id, lv) in r.cardLevels) {
+                                val c = s.card(id) ?: continue
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CardFace(c.look(), width = 92.dp, badge = if (lv.second > lv.first) "LEVEL UP!" else null)
+                                    if (lv.second > lv.first) Text("Lv ${lv.first} ➜ ${lv.second}", color = Palette.good, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        val newCards = r.drops + r.milestoneCards
+                        if (newCards.isEmpty()) Text("No new cards this time.", color = Palette.textDim)
+                        else {
+                            Text("🎁 New cards!", fontSize = 22.sp, color = Palette.gold, fontWeight = FontWeight.Black)
+                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                newCards.forEachIndexed { i, c ->
+                                    val a = remember { Animatable(0f) }
+                                    LaunchedEffect(Unit) { delay(300L + i * 250L); a.animateTo(1f, tween(450)) }
+                                    CardFace(c.look(), width = 110.dp, badge = "NEW!", modifier = Modifier.scale(a.value).alpha(a.value))
+                                }
                             }
                         }
                     }
-                }
-                Outcome.Lost -> {
-                    Text("😢 Your party needs a rest!", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Palette.text)
-                    Spacer(Modifier.height(10.dp))
-                    Text("You keep all your cards. Only the entry fee (🪙 ${fight.stage.entryFee}) is gone.", color = Palette.text, fontSize = 18.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Tips: win easier stages to level up, feed spare cards to your best card, put tough cards in the front row, or try ✋ I decide to use skills at the best moment.",
-                        color = Palette.textDim, fontSize = 15.sp, textAlign = TextAlign.Center,
-                    )
+                    Outcome.Lost -> {
+                        Text("😢 Your party needs a rest!", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Palette.text)
+                        Spacer(Modifier.height(10.dp))
+                        Text("You keep all your cards. Only the entry fee (🪙 ${fight.stage.entryFee}) is gone.", color = Palette.text, fontSize = 18.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Tips: win easier stages to level up, feed spare cards to your best card, put tough cards in the front row, or try ✋ I decide to use skills at the best moment.",
+                            color = Palette.textDim, fontSize = 15.sp, textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(16.dp))

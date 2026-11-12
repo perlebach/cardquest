@@ -55,7 +55,9 @@ The same game compiled to WebAssembly (Kotlin/Wasm); the folder above is plain s
 GitHub builds and publishes it on every push to `main` (`.github/workflows/web.yml`, GitHub Pages). It doesn't need
 `../gameServer` – without that folder only the desktop target can't be built.
 Games are saved in the browser's localStorage (same JSON as the save files; this browser on this device only).
-`?dev` in the address shows the 🛠️ Dev tab. A browser has no system fonts, so the emoji and symbols the game uses come
+⚙️ → "⬇️ Save this game to a file" and "📂 Load a game from a file" on the start screen move games between browsers and
+the exe (both versions have them; a name that's taken asks: replace it or keep both). The web version has no 🛠️ Dev tab,
+and in a window smaller than 1000 × 700 it draws everything smaller so it still fits. A browser has no system fonts, so the emoji and symbols the game uses come
 with it (`src/wasmJsMain/composeResources/font`) – after adding new emoji or symbols run `python tools/web-fonts.py`
 (needs `pip install fonttools`), otherwise they show as boxes on the web.
 

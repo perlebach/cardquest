@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cz.erlebach.cardrpg.game.GameState
 import cz.erlebach.cardrpg.game.Rules
 import cz.erlebach.cardrpg.game.SaveStore
 import cz.erlebach.cardrpg.model.CardType
@@ -43,6 +45,7 @@ fun App(model: AppModel) {
                 fight != null -> BattleScreen(model, fight)
                 else -> MainScreen(model)
             }
+            model.pendingImport?.let { ImportDialog(model, it) }
             model.message?.let { msg ->
                 AlertDialog(
                     onDismissRequest = { model.message = null },
@@ -58,11 +61,7 @@ fun App(model: AppModel) {
 private fun SavesScreen(model: AppModel) {
     var naming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
-    Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Palette.felt, Palette.feltDark))).padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
+    CenteredScreen {
         Text("🃏 Card Quest", fontSize = 52.sp, fontWeight = FontWeight.Black, color = Palette.gold)
         Spacer(Modifier.height(24.dp))
         if (model.slots.isNotEmpty()) {
@@ -89,6 +88,10 @@ private fun SavesScreen(model: AppModel) {
         }
         if (!naming) {
             Button({ naming = true }, Modifier.height(56.dp)) { Text("✨ Start a new game", fontSize = 20.sp) }
+            if (model.files != null) {
+                Spacer(Modifier.height(10.dp))
+                TextButton(model::importGame) { Text("📂 Load a game from a file", fontSize = 16.sp) }
+            }
         } else {
             Text("What's your name?", fontSize = 22.sp, color = Palette.text)
             Spacer(Modifier.height(10.dp))
@@ -118,11 +121,7 @@ private fun SavesScreen(model: AppModel) {
 @Composable
 private fun StarterScreen(model: AppModel) {
     var picked by remember { mutableStateOf<CardType?>(null) }
-    Column(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Palette.felt, Palette.feltDark))).padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
+    CenteredScreen {
         Text("🃏 Card Quest", fontSize = 52.sp, fontWeight = FontWeight.Black, color = Palette.gold)
         Spacer(Modifier.height(8.dp))
         Text("${model.slot?.name}, pick your first hero!", fontSize = 26.sp, color = Palette.text)
@@ -181,41 +180,50 @@ private fun TopBar(model: AppModel) {
     val s = model.state
     var menu by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Palette.woodLight, Palette.wood))).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("🃏 Card Quest", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Palette.gold)
-        Spacer(Modifier.width(12.dp))
-        Text(model.slot?.name ?: "", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.text)
-        Spacer(Modifier.width(24.dp))
-        for (t in Tab.entries) {
-            if (t == Tab.DEV && !model.devMode) continue
-            if (t == Tab.MEDITATION && !s.meditationUnlocked) continue
-            val sel = model.tab == t
-            Box(
-                Modifier.padding(horizontal = 4.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (sel) Palette.feltDark else Color(0x33000000))
-                    .border(2.dp, if (sel) Palette.gold else Color.Transparent, RoundedCornerShape(10.dp))
-                    .clickable { model.tab = t }.padding(horizontal = 18.dp, vertical = 8.dp)
-            ) { Text("${t.icon} ${t.title}", fontSize = 18.sp, color = if (sel) Palette.gold else Palette.text, fontWeight = FontWeight.Bold) }
-        }
-        Spacer(Modifier.weight(1f))
-        Column(horizontalAlignment = Alignment.End) {
-            Text("⭐ Player level ${s.playerLevel}", color = Palette.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            XpBar(s.playerXp, s.playerXpToNext, Modifier.width(160.dp).height(8.dp), Palette.gold)
-            Text("${fmt(s.playerXp)} / ${fmt(s.playerXpToNext)} XP", color = Palette.textDim, fontSize = 11.sp)
-        }
-        Spacer(Modifier.width(20.dp))
-        Text("🪙 ${fmt(s.gold)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Palette.gold)
-        Spacer(Modifier.width(12.dp))
-        Box {
-            TextButton({ menu = true }) { Text("⚙️", fontSize = 20.sp) }
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem(text = { Text("Wins: ${s.wins}   Losses: ${s.losses}") }, onClick = {}, enabled = false)
-                DropdownMenuItem(text = { Text("Saved in: ${model.savePath}", fontSize = 11.sp) }, onClick = {}, enabled = false)
-                DropdownMenuItem(text = { Text("📂 Switch game…") }, onClick = { menu = false; model.closeGame() })
-                DropdownMenuItem(text = { Text("🗑️ Start this game over…") }, onClick = { menu = false; confirmReset = true })
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 1200.dp  // narrow window: just 🃏 instead of the title, so all tabs fit
+        Row(
+            Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Palette.woodLight, Palette.wood))).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // title and tabs take the room that's left (and scroll sideways in a narrow window); level, gold and ⚙️ always show
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (wide) "🃏 Card Quest" else "🃏", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Palette.gold)
+                Spacer(Modifier.width(12.dp))
+                Text(model.slot?.name ?: "", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.text)
+                Spacer(Modifier.width(24.dp))
+                for (t in Tab.entries) {
+                    if (t == Tab.DEV && !model.devMode) continue
+                    if (t == Tab.MEDITATION && !s.meditationUnlocked) continue
+                    val sel = model.tab == t
+                    Box(
+                        Modifier.padding(horizontal = 4.dp).clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) Palette.feltDark else Color(0x33000000))
+                            .border(2.dp, if (sel) Palette.gold else Color.Transparent, RoundedCornerShape(10.dp))
+                            .clickable { model.tab = t }.padding(horizontal = 18.dp, vertical = 8.dp)
+                    ) { Text("${t.icon} ${t.title}", fontSize = 18.sp, color = if (sel) Palette.gold else Palette.text, fontWeight = FontWeight.Bold) }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text("⭐ Player level ${s.playerLevel}", color = Palette.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                XpBar(s.playerXp, s.playerXpToNext, Modifier.width(160.dp).height(8.dp), Palette.gold)
+                Text("${fmt(s.playerXp)} / ${fmt(s.playerXpToNext)} XP", color = Palette.textDim, fontSize = 11.sp)
+            }
+            Spacer(Modifier.width(20.dp))
+            Text("🪙 ${fmt(s.gold)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Palette.gold)
+            Spacer(Modifier.width(12.dp))
+            Box {
+                TextButton({ menu = true }) { Text("⚙️", fontSize = 20.sp) }
+                DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem(text = { Text("Wins: ${s.wins}   Losses: ${s.losses}") }, onClick = {}, enabled = false)
+                    DropdownMenuItem(text = { Text("Saved in: ${model.savePath}", fontSize = 11.sp) }, onClick = {}, enabled = false)
+                    DropdownMenuItem(text = { Text("📂 Switch game…") }, onClick = { menu = false; model.closeGame() })
+                    if (model.files != null) {
+                        DropdownMenuItem(text = { Text("⬇️ Save this game to a file") }, onClick = { menu = false; model.exportGame() })
+                    }
+                    DropdownMenuItem(text = { Text("🗑️ Start this game over…") }, onClick = { menu = false; confirmReset = true })
+                }
             }
         }
     }
@@ -226,6 +234,45 @@ private fun TopBar(model: AppModel) {
             text = { Text("All cards, gold and progress of \"${model.slot?.name}\" will be lost!") },
             confirmButton = { Button({ confirmReset = false; model.reset() }, colors = ButtonDefaults.buttonColors(containerColor = Palette.bad)) { Text("Yes, start over") } },
             dismissButton = { TextButton({ confirmReset = false }) { Text("No") } },
+        )
+    }
+}
+
+/** A loaded game has the name of an existing one: replace that one, or keep both? */
+@Composable
+private fun ImportDialog(model: AppModel, p: PendingImport) {
+    fun strength(g: GameState) = if (g.started) "💪 ${fmt(g.partyStrength)}" else "no hero yet"
+    AlertDialog(
+        onDismissRequest = { model.resolveImport(null) },
+        title = { Text("There already is a game called \"${p.existing.name}\"") },
+        text = {
+            Text(
+                "Here: ${strength(p.existing.state)}\nIn the file: ${strength(p.file.game)}\n\n" +
+                    "Replace the game here with the one from the file (the one here will be lost), or keep both?",
+                fontSize = 16.sp,
+            )
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ model.resolveImport(false) }) { Text("Keep both") }
+                Button({ model.resolveImport(true) }, colors = ButtonDefaults.buttonColors(containerColor = Palette.bad)) { Text("Replace it") }
+            }
+        },
+        dismissButton = { TextButton({ model.resolveImport(null) }) { Text("Cancel") } },
+    )
+}
+
+/** A full-screen column, centred – and scrollable when the window is too low for it. */
+@Composable
+private fun CenteredScreen(content: @Composable ColumnScope.() -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Palette.felt, Palette.feltDark))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            content = content,
         )
     }
 }

@@ -46,4 +46,30 @@ class SaveManagerTest {
         assertEquals(warrior.partyCards.single().let { it.hp + it.atk }.toLong(), warrior.partyStrength)
         dir.deleteRecursively()
     }
+
+    @Test
+    fun exportAndImport() {
+        val here = SaveManager(File(dir, "here"))
+        val paja = here.create("Paja")
+        here.save(paja, Rules.newGame(CardType.MAGE).copy(gold = 100))
+        // the exported file of the same game played elsewhere
+        val file = here.decode(here.encode("Paja", Rules.newGame(CardType.MAGE).copy(gold = 999)))
+        assertEquals("Paja", file.name)
+
+        val other = SaveManager(File(dir, "other"))
+        assertEquals("Paja", other.import(file).name)  // a new game under its own name
+
+        val both = here.import(file)  // keep both: the name is taken
+        assertEquals("Paja 2", both.name)
+        assertEquals(999L, both.state.gold)
+        assertEquals(100L, here.list().first { it.name == "Paja" }.state.gold)
+
+        here.import(file, replace = here.list().first { it.name == "Paja" })  // replace
+        assertEquals(999L, here.list().first { it.name == "Paja" }.state.gold)
+        assertEquals(setOf("Paja", "Paja 2"), here.list().map { it.name }.toSet())
+
+        assertFailsWith<GameException> { here.decode("""{"something": "else"}""") }
+        assertFailsWith<GameException> { here.decode("not json at all") }
+        dir.deleteRecursively()
+    }
 }

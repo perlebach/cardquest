@@ -6,6 +6,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import cz.erlebach.cardrpg.game.DesktopSaveFiles
 import cz.erlebach.cardrpg.game.SaveManager
 import cz.erlebach.cardrpg.game.ServerSaves
 import cz.erlebach.cardrpg.ui.App
@@ -43,7 +44,7 @@ fun main(args: Array<String>) {
     sync?.let { Runtime.getRuntime().addShutdownHook(Thread { it.flush() }) }
 
     application {
-        val model = remember { AppModel(saves, sync, status, devMode = dev) }
+        val model = remember { AppModel(saves, sync, status, devMode = dev, files = DesktopSaveFiles()) }
         Window(
             onCloseRequest = ::exitApplication,
             title = "Card Quest",

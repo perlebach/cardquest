@@ -46,8 +46,33 @@ abstract class SaveStore(private val validKey: (String) -> Boolean) {
         return SaveSlot(n, freeKey(n), GameState())
     }
 
-    fun save(slot: SaveSlot, state: GameState) =
-        writeText(slot.key, json.encodeToString(SaveFile.serializer(), SaveFile(slot.name, state)))
+    fun save(slot: SaveSlot, state: GameState) = writeText(slot.key, encode(slot.name, state))
+
+    /** The game as the text of a save file (for export; the same format on the desktop and the web). */
+    fun encode(name: String, state: GameState): String = json.encodeToString(SaveFile.serializer(), SaveFile(name, state))
+
+    /** A save file's text read back; throws [GameException] if it isn't a Card Quest game. */
+    fun decode(text: String): SaveFile = try {
+        json.decodeFromString(SaveFile.serializer(), text).let { it.copy(name = it.name.trim().take(MAX_NAME)) }
+            .also { if (it.name.isEmpty()) throw GameException("no name") }
+    } catch (e: Exception) {
+        throw GameException("⚠️ That file isn't a Card Quest game.")
+    }
+
+    /**
+     * Stores an imported game: over [replace] (keeping its name and place), or as a new game –
+     * under the file's name, or "<name> 2", "<name> 3"… if that is taken.
+     */
+    fun import(file: SaveFile, replace: SaveSlot? = null): SaveSlot {
+        val slot = replace?.copy(state = file.game) ?: run {
+            val taken = list().map { it.name.lowercase() }.toSet()
+            val base = file.name.take(MAX_NAME - 3)
+            val name = (sequenceOf(file.name) + (2..99).asSequence().map { "$base $it" }).first { it.lowercase() !in taken }
+            create(name).copy(state = file.game)
+        }
+        save(slot, slot.state)
+        return slot
+    }
 
     /** The slot read again from storage (e.g. after the server sync replaced it), or null if it can't be read. */
     fun reload(slot: SaveSlot): SaveSlot? = read(slot.key)
@@ -76,6 +101,15 @@ abstract class SaveStore(private val validKey: (String) -> Boolean) {
         const val LEGACY_NAME = "Paja"
         const val MAX_NAME = 24
     }
+}
+
+/** Moving games to and from files (export / import), e.g. between the desktop and the web version. */
+interface SaveFiles {
+    /** Lets the player save [text] as a file called [fileName] (browser: a download; desktop: a save dialog). */
+    fun export(fileName: String, text: String)
+
+    /** Lets the player pick a file; [onText] gets its content (later, or never if the player cancels). */
+    fun pick(onText: (String) -> Unit)
 }
 
 /** Keeps the saved games in sync with another place (on the desktop: the home server). */
