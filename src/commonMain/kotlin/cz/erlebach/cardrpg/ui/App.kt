@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cz.erlebach.cardrpg.GAME_VERSION
 import cz.erlebach.cardrpg.game.GameState
 import cz.erlebach.cardrpg.game.Rules
 import cz.erlebach.cardrpg.game.SaveStore
@@ -115,6 +116,8 @@ private fun SavesScreen(model: AppModel) {
             Spacer(Modifier.height(28.dp))
             Text(it, fontSize = 14.sp, color = Palette.textDim)
         }
+        Spacer(Modifier.height(if (model.syncStatus == null) 28.dp else 6.dp))
+        Text("Version $GAME_VERSION", fontSize = 13.sp, color = Palette.textDim)
     }
 }
 

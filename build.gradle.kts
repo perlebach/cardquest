@@ -9,7 +9,20 @@ plugins {
 }
 
 group = "cz.erlebach"
-version = "1.0-SNAPSHOT"
+// The game version: shown on the start screen (generated GameVersion.kt) and used for the msi. Raise it for each release.
+version = "1.0.1"
+
+val generateVersion by tasks.registering {
+  val version = project.version.toString()
+  val dir = layout.buildDirectory.dir("generated/version")
+  inputs.property("version", version)
+  outputs.dir(dir)
+  doLast {
+    val file = dir.get().file("cz/erlebach/cardrpg/GameVersion.kt").asFile
+    file.parentFile.mkdirs()
+    file.writeText("package cz.erlebach.cardrpg\n\n/** Generated from build.gradle.kts. */\nconst val GAME_VERSION = \"$version\"\n")
+  }
+}
 
 repositories {
   mavenCentral()
@@ -37,6 +50,7 @@ kotlin {
   }
 
   sourceSets {
+    commonMain { kotlin.srcDir(generateVersion) }
     commonMain.dependencies {
       implementation(compose.runtime)
       implementation(compose.foundation)
@@ -90,7 +104,7 @@ compose.desktop {
     nativeDistributions {
       targetFormats(TargetFormat.Msi)
       packageName = "CardQuest"
-      packageVersion = "1.0.0"
+      packageVersion = project.version.toString()
     }
   }
 }
