@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Warrior: knight bust with helm, plate armour, sword and shield -->
+  <!-- plume -->
+  <path d="M62 30 C64 12 84 4 100 10 C108 13 112 20 110 26 C100 18 86 20 76 34 Z" fill="#E04A3F"/>
+  <path d="M70 30 C76 18 90 14 102 16 C92 18 84 24 78 34 Z" fill="#F07A6E"/>
+  <!-- body / plate armour -->
+  <path d="M10 128 C10 104 30 90 64 90 C98 90 118 104 118 128 Z" fill="#8E9BAA"/>
+  <path d="M40 128 C40 108 48 96 64 96 C80 96 88 108 88 128 Z" fill="#AAB6C3"/>
+  <path d="M52 104 Q64 100 76 104 L74 112 Q64 109 54 112 Z" fill="#C8D2DC"/>
+  <!-- pauldrons -->
+  <ellipse cx="30" cy="102" rx="22" ry="13" fill="#B4C0CC"/>
+  <ellipse cx="30" cy="99" rx="17" ry="7" fill="#CBD5DF"/>
+  <ellipse cx="98" cy="102" rx="22" ry="13" fill="#B4C0CC"/>
+  <ellipse cx="98" cy="99" rx="17" ry="7" fill="#CBD5DF"/>
+  <!-- gorget -->
+  <path d="M44 84 Q64 96 84 84 L86 94 Q64 104 42 94 Z" fill="#7D8A99"/>
+  <!-- helmet -->
+  <path d="M36 70 C36 40 48 28 64 28 C80 28 92 40 92 70 L92 84 Q64 94 36 84 Z" fill="#B4C0CC"/>
+  <path d="M44 46 C48 36 56 32 64 32 C60 36 52 40 48 50 Z" fill="#E2E8EE"/>
+  <!-- face opening -->
+  <rect x="47" y="52" width="34" height="30" rx="11" fill="#5C6876"/>
+  <rect x="49" y="54" width="30" height="27" rx="10" fill="#FFC83D"/>
+  <!-- brow band -->
+  <path d="M38 52 Q64 44 90 52 L90 58 Q64 50 38 58 Z" fill="#7D8A99"/>
+  <!-- nose guard -->
+  <rect x="61.5" y="50" width="5" height="19" rx="2" fill="#7D8A99"/>
+  <!-- eyes and smile -->
+  <circle cx="55.5" cy="64" r="3.2" fill="#3B2A1C"/>
+  <circle cx="72.5" cy="64" r="3.2" fill="#3B2A1C"/>
+  <path d="M57 73 Q64 78 71 73" stroke="#3B2A1C" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <!-- rivets -->
+  <circle cx="41" cy="72" r="1.8" fill="#7D8A99"/>
+  <circle cx="87" cy="72" r="1.8" fill="#7D8A99"/>
+  <!-- sword (left) -->
+  <path d="M19 26 L23.5 10 L28 26 L28 94 L19 94 Z" fill="#E6EBF0"/>
+  <path d="M23.5 14 L23.5 92" stroke="#AEB9C5" stroke-width="2"/>
+  <rect x="10" y="92" width="27" height="6" rx="3" fill="#E0B43A"/>
+  <rect x="20.5" y="98" width="6" height="12" fill="#7A4A25"/>
+  <circle cx="23.5" cy="104" r="7.5" fill="#8E9BAA"/>
+  <circle cx="23.5" cy="102" r="4" fill="#B4C0CC"/>
+  <!-- shield (right) -->
+  <path d="M80 98 L118 98 L118 110 C118 122 108 130 99 134 C90 130 80 122 80 110 Z" fill="#E0B43A"/>
+  <path d="M84 101 L114 101 L114 110 C114 120 106 127 99 130 C92 127 84 120 84 110 Z" fill="#D9473C"/>
+  <path d="M99 104 L102 111 L109 111 L103.5 115.5 L105.5 122 L99 118 L92.5 122 L94.5 115.5 L89 111 L96 111 Z" fill="#FFE07A"/>
+</svg>

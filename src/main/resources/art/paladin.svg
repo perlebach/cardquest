@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Paladin: holy knight with winged helm, white-gold armour and a war hammer -->
+  <!-- glow -->
+  <circle cx="64" cy="56" r="40" fill="#FFF6C2" opacity="0.55"/>
+  <circle cx="64" cy="56" r="31" fill="#FFFBE0" opacity="0.6"/>
+  <!-- body / armour -->
+  <path d="M10 128 C10 104 30 90 64 90 C98 90 118 104 118 128 Z" fill="#E7E2D3"/>
+  <path d="M42 128 L46 98 Q64 104 82 98 L86 128 Z" fill="#FFFFFF"/>
+  <path d="M44 128 L47 100 Q64 106 81 100 L84 128" stroke="#E0B43A" stroke-width="3" fill="none"/>
+  <!-- sun emblem -->
+  <circle cx="64" cy="114" r="7" fill="#F2C14E"/>
+  <g stroke="#F2C14E" stroke-width="2.4" stroke-linecap="round">
+    <line x1="64" y1="102" x2="64" y2="104.5"/><line x1="64" y1="123.5" x2="64" y2="126"/>
+    <line x1="52" y1="114" x2="54.5" y2="114"/><line x1="73.5" y1="114" x2="76" y2="114"/>
+    <line x1="55.5" y1="105.5" x2="57.3" y2="107.3"/><line x1="70.7" y1="120.7" x2="72.5" y2="122.5"/>
+    <line x1="72.5" y1="105.5" x2="70.7" y2="107.3"/><line x1="57.3" y1="120.7" x2="55.5" y2="122.5"/>
+  </g>
+  <!-- pauldrons -->
+  <ellipse cx="30" cy="102" rx="22" ry="13" fill="#F4EFE0"/>
+  <ellipse cx="30" cy="102" rx="22" ry="13" fill="none" stroke="#E0B43A" stroke-width="2.5"/>
+  <ellipse cx="98" cy="102" rx="22" ry="13" fill="#F4EFE0"/>
+  <ellipse cx="98" cy="102" rx="22" ry="13" fill="none" stroke="#E0B43A" stroke-width="2.5"/>
+  <!-- gorget -->
+  <path d="M44 84 Q64 96 84 84 L86 94 Q64 104 42 94 Z" fill="#E0B43A"/>
+  <!-- wings on the helm -->
+  <path d="M38 58 C24 52 18 40 20 30 C26 38 32 40 38 42 C30 36 28 30 30 24 C36 32 42 36 44 44 Z" fill="#FFFFFF" stroke="#E6DFC8" stroke-width="1.5"/>
+  <path d="M90 58 C104 52 110 40 108 30 C102 38 96 40 90 42 C98 36 100 30 98 24 C92 32 86 36 84 44 Z" fill="#FFFFFF" stroke="#E6DFC8" stroke-width="1.5"/>
+  <!-- helmet -->
+  <path d="M36 70 C36 40 48 28 64 28 C80 28 92 40 92 70 L92 84 Q64 94 36 84 Z" fill="#F4EFE0"/>
+  <path d="M36 70 C36 40 48 28 64 28 C80 28 92 40 92 70 L92 84 Q64 94 36 84 Z" fill="none" stroke="#E0B43A" stroke-width="2.5"/>
+  <path d="M62 28 L66 28 L66 50 L62 50 Z" fill="#E0B43A"/>
+  <!-- face opening -->
+  <rect x="47" y="52" width="34" height="30" rx="11" fill="#C9A227"/>
+  <rect x="49" y="54" width="30" height="27" rx="10" fill="#FFC83D"/>
+  <path d="M38 52 Q64 44 90 52 L90 57 Q64 49 38 57 Z" fill="#E0B43A"/>
+  <!-- friendly face -->
+  <path d="M52 64 Q55.5 60 59 64" stroke="#3B2A1C" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M69 64 Q72.5 60 76 64" stroke="#3B2A1C" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M57 72 Q64 78 71 72" stroke="#3B2A1C" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <!-- war hammer (left) -->
+  <rect x="20.5" y="30" width="6" height="74" rx="2" fill="#8A5A2B"/>
+  <rect x="8" y="14" width="31" height="20" rx="4" fill="#D6D2C4"/>
+  <rect x="8" y="14" width="31" height="20" rx="4" fill="none" stroke="#E0B43A" stroke-width="2.5"/>
+  <rect x="21" y="18" width="5" height="12" rx="1" fill="#E0B43A"/>
+  <circle cx="23.5" cy="104" r="7.5" fill="#E7E2D3" stroke="#E0B43A" stroke-width="2"/>
+  <!-- sparkles -->
+  <path d="M104 64 L106 70 L112 72 L106 74 L104 80 L102 74 L96 72 L102 70 Z" fill="#FFE07A"/>
+  <path d="M112 44 L113 47 L116 48 L113 49 L112 52 L111 49 L108 48 L111 47 Z" fill="#FFE07A"/>
+</svg>

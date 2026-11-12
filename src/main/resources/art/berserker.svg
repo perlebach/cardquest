@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Berserker: viking with a horned helmet, big red beard and two axes -->
+  <!-- axes (behind the shoulders) -->
+  <g>
+    <rect x="13" y="22" width="6" height="86" rx="2" fill="#8A5A2B" transform="rotate(-12 16 65)"/>
+    <path d="M6 20 C-2 26 -2 42 6 48 L18 42 L18 26 Z" fill="#C8D2DC" transform="rotate(-12 16 65)"/>
+    <path d="M6 20 C2 26 2 42 6 48" stroke="#8E9BAA" stroke-width="2.5" fill="none" transform="rotate(-12 16 65)"/>
+  </g>
+  <g>
+    <rect x="109" y="22" width="6" height="86" rx="2" fill="#8A5A2B" transform="rotate(12 112 65)"/>
+    <path d="M122 20 C130 26 130 42 122 48 L110 42 L110 26 Z" fill="#C8D2DC" transform="rotate(12 112 65)"/>
+    <path d="M122 20 C126 26 126 42 122 48" stroke="#8E9BAA" stroke-width="2.5" fill="none" transform="rotate(12 112 65)"/>
+  </g>
+  <!-- body with fur cloak -->
+  <path d="M10 128 C10 104 30 90 64 90 C98 90 118 104 118 128 Z" fill="#6E8BA8"/>
+  <path d="M44 128 L48 98 Q64 104 80 98 L84 128 Z" fill="#9A6A3A"/>
+  <path d="M10 112 C14 96 30 88 46 90 C40 96 34 98 30 104 C26 100 20 104 18 110 C14 108 12 110 10 112 Z" fill="#B88A55"/>
+  <path d="M118 112 C114 96 98 88 82 90 C88 96 94 98 98 104 C102 100 108 104 110 110 C114 108 116 110 118 112 Z" fill="#B88A55"/>
+  <!-- hands holding the axes -->
+  <circle cx="24" cy="104" r="7.5" fill="#FFC83D"/>
+  <circle cx="104" cy="104" r="7.5" fill="#FFC83D"/>
+  <!-- horns -->
+  <path d="M40 42 C28 40 20 30 20 16 C26 26 34 30 44 30 Z" fill="#F4EBD8"/>
+  <path d="M88 42 C100 40 108 30 108 16 C102 26 94 30 84 30 Z" fill="#F4EBD8"/>
+  <!-- face -->
+  <ellipse cx="64" cy="62" rx="22" ry="24" fill="#FFC83D"/>
+  <!-- helmet -->
+  <path d="M38 52 C38 32 50 24 64 24 C78 24 90 32 90 52 Z" fill="#9AA7B5"/>
+  <path d="M46 40 C50 32 56 28 64 28 C58 32 52 36 50 44 Z" fill="#C8D2DC"/>
+  <rect x="36" y="48" width="56" height="7" rx="3" fill="#7D8A99"/>
+  <circle cx="46" cy="51.5" r="1.6" fill="#C8D2DC"/><circle cx="64" cy="51.5" r="1.6" fill="#C8D2DC"/><circle cx="82" cy="51.5" r="1.6" fill="#C8D2DC"/>
+  <!-- determined eyebrows and eyes -->
+  <path d="M49 59 L59 62" stroke="#B5461E" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M79 59 L69 62" stroke="#B5461E" stroke-width="3.4" stroke-linecap="round"/>
+  <circle cx="56" cy="66" r="3.2" fill="#3B2A1C"/>
+  <circle cx="72" cy="66" r="3.2" fill="#3B2A1C"/>
+  <!-- big beard and moustache -->
+  <path d="M42 70 C42 92 52 104 64 106 C76 104 86 92 86 70 C80 80 72 78 64 78 C56 78 48 80 42 70 Z" fill="#D9622B"/>
+  <path d="M56 104 L60 112 L64 104 L68 112 L72 104" fill="#D9622B"/>
+  <path d="M50 77 C56 72 62 74 64 76 C66 74 72 72 78 77 C72 79 68 80 64 79 C60 80 56 79 50 77 Z" fill="#B5461E"/>
+  <path d="M58 85 Q64 89 70 85" stroke="#7A2E10" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+</svg>
