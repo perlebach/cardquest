@@ -28,11 +28,11 @@ import cz.erlebach.cardrpg.model.Balance
 import cz.erlebach.cardrpg.model.CardType
 import cz.erlebach.cardrpg.model.OwnedCard
 import cz.erlebach.cardrpg.model.Rarity
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
+import androidx.compose.foundation.Image
+import cz.erlebach.cardrpg.resources.Res
+import cz.erlebach.cardrpg.resources.allDrawableResources
+import org.jetbrains.compose.resources.painterResource
+import kotlin.math.roundToLong
 
 object Palette {
     val felt = Color(0xFF1F4D3A)
@@ -75,27 +75,16 @@ fun evoOrnament(evo: Int): Color? = when (evo) {
     else -> Color(0xFFFF4F8B)
 }
 
-private val svgCache = mutableMapOf<String, SVGDOM?>()
-
-private fun svg(name: String): SVGDOM? = svgCache.getOrPut(name) {
-    CardType::class.java.getResourceAsStream("/art/$name.svg")?.use { SVGDOM(Data.makeFromBytes(it.readBytes())) }
-}
-
-/** Picture of a card type: a hand-drawn SVG (resources/art) if it has one, otherwise its emoji. */
+/** Picture of a card type: a hand-drawn SVG (composeResources/drawable) if it has one, otherwise its emoji. */
 @Composable
 fun CardArt(type: CardType, size: Dp, modifier: Modifier = Modifier) {
-    val dom = type.art?.let { svg(it) }
-    if (dom == null) {
+    val art = type.art?.let { Res.allDrawableResources[it] }
+    if (art == null) {
         Box(modifier.size(size), contentAlignment = Alignment.Center) {
             Text(type.emoji, fontSize = (size.value * 0.82f).sp, lineHeight = (size.value * 0.95f).sp)
         }
     } else {
-        Canvas(modifier.size(size)) {
-            drawIntoCanvas { c ->
-                dom.setContainerSize(this.size.width, this.size.height)
-                dom.render(c.nativeCanvas)
-            }
-        }
+        Image(painterResource(art), contentDescription = type.title, modifier = modifier.size(size))
     }
 }
 
@@ -272,7 +261,7 @@ fun fmt(n: Number): String {
     val v = n.toLong()
     return when {
         v >= 10_000_000 -> "${v / 1_000_000}M"
-        v >= 1_000_000 -> "%.1fM".format(v / 1_000_000.0)
+        v >= 1_000_000 -> (v / 100_000.0).roundToLong().let { "${it / 10}.${it % 10}M" }
         v >= 10_000 -> "${v / 1000}k"
         else -> v.toString()
     }

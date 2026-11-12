@@ -22,7 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.erlebach.cardrpg.game.Rules
-import cz.erlebach.cardrpg.game.SaveManager
+import cz.erlebach.cardrpg.game.SaveStore
 import cz.erlebach.cardrpg.model.CardType
 import cz.erlebach.cardrpg.model.OwnedCard
 import cz.erlebach.cardrpg.model.Rarity
@@ -95,7 +95,7 @@ private fun SavesScreen(model: AppModel) {
             val focus = remember { FocusRequester() }
             val submit = { if (name.isNotBlank()) model.newGame(name) }
             OutlinedTextField(
-                name, { name = it.take(SaveManager.MAX_NAME) },
+                name, { name = it.take(SaveStore.MAX_NAME) },
                 singleLine = true,
                 textStyle = LocalTextStyle.current.copy(fontSize = 22.sp),
                 modifier = Modifier.width(360.dp).focusRequester(focus)

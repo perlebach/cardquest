@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package cz.erlebach.cardrpg.game
 
 import cz.erlebach.cardrpg.battle.Battle
@@ -16,6 +18,9 @@ import cz.erlebach.cardrpg.model.Rarity
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 
 @Serializable
 data class GameState(
@@ -201,17 +206,17 @@ object Rules {
     // ---------------------------------------------------------------- fights
 
     /** Unique fighter ids (atomic: the balance simulation plays several games at once). */
-    private val uidCounter = java.util.concurrent.atomic.AtomicInteger()
+    private val uidCounter = AtomicInt(0)
 
     fun fighterFor(c: OwnedCard, slot: Int) = Fighter(
-        uidCounter.incrementAndGet(), Side.PLAYER, c.type, c.rarity, c.evo, c.level, c.hp, c.atk,
+        uidCounter.incrementAndFetch(), Side.PLAYER, c.type, c.rarity, c.evo, c.level, c.hp, c.atk,
         if (c.hasSkill) c.type.skill else null, c.skillPower, listOf(slot), cardId = c.id, skillLevel = c.skillLevel,
         skillCooldown = c.skillCooldown,
     )
 
     /** Regular monsters fight with skill level 1, bosses always with the max skill level (including its bonus). */
     fun monsterFighter(m: MonsterSpec) = Fighter(
-        uidCounter.incrementAndGet(), Side.ENEMY, m.type, m.rarity, m.evo, m.level,
+        uidCounter.incrementAndFetch(), Side.ENEMY, m.type, m.rarity, m.evo, m.level,
         maxOf(1, (Balance.hp(m.type, m.level, m.rarity, m.evo, m.slots.size) * m.hpFactor).roundToInt()),
         maxOf(1, (Balance.atk(m.type, m.level, m.rarity, m.evo) * m.atkFactor).roundToInt()),
         if (m.rarity != Rarity.COMMON) m.type.skill else null,

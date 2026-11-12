@@ -1,7 +1,8 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
-  kotlin("jvm") version "2.2.20"
+  kotlin("multiplatform") version "2.2.20"
   kotlin("plugin.compose") version "2.2.20"
   kotlin("plugin.serialization") version "2.2.20"
   id("org.jetbrains.compose") version "1.9.0"
@@ -15,24 +16,68 @@ repositories {
   google()
 }
 
-dependencies {
-  implementation(compose.desktop.currentOs)
-  implementation(compose.material3)
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-  // Finding the home server, updates and save sync (project ../gameServer).
-  implementation("cz.erlebach:gameserver-client:1.0")
-  testImplementation(kotlin("test"))
-  testImplementation("cz.erlebach:server:1.0")  // the real server, for the sync tests
-  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
-}
-
-tasks.test {
-  useJUnitPlatform()
-}
-
+// Two targets from one code base:
+//  - desktop: the Windows exe (src/desktopMain: files on disk, home server sync, updates)
+//  - wasmJs:  the web page (src/wasmJsMain: saves in the browser's localStorage)
+// The game rules and all screens are shared (src/commonMain).
 kotlin {
   jvmToolchain(21)
+
+  jvm("desktop") {
+    testRuns["test"].executionTask.configure { useJUnitPlatform() }
+  }
+
+  @OptIn(ExperimentalWasmDsl::class)
+  wasmJs {
+    outputModuleName.set("cardquest")
+    browser {
+      commonWebpackConfig { outputFileName = "cardquest.js" }
+    }
+    binaries.executable()
+  }
+
+  sourceSets {
+    commonMain.dependencies {
+      implementation(compose.runtime)
+      implementation(compose.foundation)
+      implementation(compose.ui)
+      implementation(compose.material3)
+      implementation(compose.components.resources)
+      implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    }
+    val desktopMain by getting {
+      dependencies {
+        implementation(compose.desktop.currentOs)
+        // Finding the home server, updates and save sync (project ../gameServer).
+        implementation("cz.erlebach:gameserver-client:1.0")
+      }
+    }
+    val desktopTest by getting {
+      dependencies {
+        implementation(kotlin("test"))
+        implementation("cz.erlebach:server:1.0")  // the real server, for the sync tests
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+      }
+    }
+    wasmJsMain.dependencies {
+      implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3.1")  // window, document, localStorage
+    }
+  }
 }
+
+compose.resources {
+  packageOfResClass = "cz.erlebach.cardrpg.resources"
+}
+
+// `gradlew test` as before the web version (the tests run on the desktop target)
+tasks.register("test") {
+  group = "verification"
+  description = "Runs the rule and save tests (= desktopTest)."
+  dependsOn("desktopTest")
+}
+
+/** Classpath of the desktop tests, for the dev helper tasks below (simulation, reports, screenshots). */
+val desktopTestClasspath = kotlin.jvm("desktop").compilations["test"].let { files(it.output.allOutputs, it.runtimeDependencyFiles) }
 
 compose.desktop {
   application {
@@ -79,7 +124,8 @@ afterEvaluate { tasks.named("createDistributable") { finalizedBy(publishToServer
 
 tasks.register<JavaExec>("simulate") {
   description = "Runs the balance simulation bot"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.BalanceSimulationKt")
   // ./gradlew simulate -Pseeds=40  -> more runs per starter (less luck in the averages)
   args(project.findProperty("seeds")?.toString() ?: "6")
@@ -88,7 +134,8 @@ tasks.register<JavaExec>("simulate") {
 
 tasks.register<JavaExec>("screenshots") {
   description = "Renders the main screens to PNG (dev helper)"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.ScreenshotsKt")
   args(project.findProperty("out")?.toString() ?: "build/screens")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
@@ -96,28 +143,32 @@ tasks.register<JavaExec>("screenshots") {
 
 tasks.register<JavaExec>("traits") {
   description = "Prints how many levels the counter skill of each trait boss is worth (dev helper)"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.TraitReportKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }
 
 tasks.register<JavaExec>("stages") {
   description = "Prints all dungeon stages: fees, gold, monsters (dev helper)"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.StageReportKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }
 
 tasks.register<JavaExec>("economy") {
   description = "Shop hero copy vs raising bought green heroes: replays needed per stage (dev helper)"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.EconomyReportKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }
 
 tasks.register<JavaExec>("gauntlet") {
   description = "How hard the late dungeons are for all-hero parties: lowest winning effective level per stage (dev helper)"
-  classpath = sourceSets["test"].runtimeClasspath
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.GauntletReportKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }

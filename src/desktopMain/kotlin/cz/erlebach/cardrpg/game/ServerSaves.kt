@@ -4,6 +4,7 @@ import cz.erlebach.gameserver.Protocol
 import cz.erlebach.gameserver.SaveSync
 import cz.erlebach.gameserver.ServerClient
 import cz.erlebach.gameserver.SyncConfig
+import javax.swing.SwingUtilities
 
 /**
  * Keeps all saved games in sync with the home server (project ../gameServer). Each game is one save on the server,
@@ -20,16 +21,22 @@ class ServerSaves(
     private val saves: SaveManager,
     private val config: SyncConfig,
     private val askConflict: (gameName: String, SaveSync.Conflict) -> Boolean,
-) {
-    /** Called from the sync thread when the server refused an upload because another computer changed that game meanwhile. */
-    @Volatile var onRejected: (gameName: String) -> Unit = {}
+) : GameSync {
+    /** Called (on the Swing thread) when the server refused an upload because another computer changed that game meanwhile. */
+    @Volatile override var onRejected: (gameName: String) -> Unit = {}
 
     private val syncs = mutableMapOf<String, SaveSync>()
 
     val address: String get() = server.address
 
     private fun syncFor(name: String): SaveSync = synchronized(syncs) {
-        syncs.getOrPut(name) { SaveSync(server, name, saves.fileFor(name).toPath(), config, onConflict = { onRejected(displayName(name)) }) }
+        syncs.getOrPut(name) { SaveSync(server, name, saves.fileFor(name).toPath(), config, onConflict = { rejected(name) }) }
+    }
+
+    /** Runs on the sync thread; the UI is told on the Swing thread. */
+    private fun rejected(name: String) {
+        val game = displayName(name)
+        SwingUtilities.invokeLater { onRejected(game) }
     }
 
     private fun displayName(name: String) = saves.list().firstOrNull { it.syncName == name }?.name ?: name
@@ -65,8 +72,8 @@ class ServerSaves(
     }
 
     /** Before opening a game: progress from another computer. Returns false if the server didn't answer. */
-    fun refresh(name: String): Boolean = try {
-        startup(name)
+    override fun refresh(syncName: String): Boolean = try {
+        startup(syncName)
         true
     } catch (e: Exception) {
         false
@@ -74,7 +81,7 @@ class ServerSaves(
 
     private fun startup(name: String) = syncFor(name).startup { conflict -> askConflict(displayName(name), conflict) }
 
-    fun saved(slot: SaveSlot) {
+    override fun saved(slot: SaveSlot) {
         if (Protocol.validSaveName(slot.syncName)) syncFor(slot.syncName).scheduleUpload()
     }
 

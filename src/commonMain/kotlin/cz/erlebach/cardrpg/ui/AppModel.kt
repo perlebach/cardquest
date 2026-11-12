@@ -10,9 +10,10 @@ import cz.erlebach.cardrpg.game.GameState
 import cz.erlebach.cardrpg.game.Rules
 import cz.erlebach.cardrpg.model.Balance
 import cz.erlebach.cardrpg.model.CardType
-import cz.erlebach.cardrpg.game.SaveManager
+import cz.erlebach.cardrpg.game.GameSync
 import cz.erlebach.cardrpg.game.SaveSlot
-import cz.erlebach.cardrpg.game.ServerSaves
+import cz.erlebach.cardrpg.game.SaveStore
+import cz.erlebach.cardrpg.localEpochDay
 
 enum class Tab(val title: String, val icon: String) {
     CARDS("Cards", "🃏"), PARTY("Party", "🛡️"), DUNGEONS("Dungeons", "🏰"), MEDITATION("Meditation", "🪷"), DEV("Dev", "🛠️")
@@ -22,12 +23,14 @@ class ActiveFight(val stage: StageDef, val battle: Battle)
 
 /**
  * Holds the game state for the UI; every change is saved immediately (once a game is open)
- * and, with a home server ([sync]), uploaded there too. [syncStatus] is shown on the saved-games screen.
+ * and, with a home server ([sync]), uploaded there too. [syncStatus] is shown on the saved-games screen;
+ * [devMode] shows the developer cheat panel.
  */
 class AppModel(
-    private val saves: SaveManager = SaveManager(),
-    private val sync: ServerSaves? = null,
+    private val saves: SaveStore,
+    private val sync: GameSync? = null,
     val syncStatus: String? = null,
+    val devMode: Boolean = false,
 ) {
     /** The open game; null = the saved-games screen is shown. */
     var slot by mutableStateOf<SaveSlot?>(null)
@@ -40,10 +43,9 @@ class AppModel(
     var tab by mutableStateOf(Tab.DUNGEONS)
     var fight by mutableStateOf<ActiveFight?>(null)
     var message by mutableStateOf<String?>(null)
-    val devMode = System.getProperty("cardrpg.dev") == "true"
-    val savePath get() = slot?.file?.absolutePath ?: saves.path
+    val savePath get() = saves.location(slot)
     /** Today as a local epoch day (meditation clues come at local midnight); replaceable for tests. */
-    var today: () -> Long = { java.time.LocalDate.now().toEpochDay() }
+    var today: () -> Long = ::localEpochDay
 
     /**
      * Applies a rule; shows the error message instead of crashing on a [GameException].
@@ -76,10 +78,8 @@ class AppModel(
 
     init {
         sync?.onRejected = { game ->
-            javax.swing.SwingUtilities.invokeLater {
-                message = "⚠️ \"$game\" was changed on another computer meanwhile. Your progress is saved on this computer only " +
-                    "for now; next time you open the game you'll choose which version to keep."
-            }
+            message = "⚠️ \"$game\" was changed on another computer meanwhile. Your progress is saved on this computer only " +
+                "for now; next time you open the game you'll choose which version to keep."
         }
     }
 

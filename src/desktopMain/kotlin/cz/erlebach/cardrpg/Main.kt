@@ -43,7 +43,7 @@ fun main(args: Array<String>) {
     sync?.let { Runtime.getRuntime().addShutdownHook(Thread { it.flush() }) }
 
     application {
-        val model = remember { AppModel(saves, sync, status) }
+        val model = remember { AppModel(saves, sync, status, devMode = dev) }
         Window(
             onCloseRequest = ::exitApplication,
             title = "Card Quest",

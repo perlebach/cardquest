@@ -1,6 +1,6 @@
 # Card Quest (prototype)
 
-A card RPG prototype in Kotlin + Compose for Desktop.
+A card RPG prototype in Kotlin + Compose Multiplatform: a Windows exe and a web page from the same code.
 
 ```
 ./gradlew run            # play
@@ -44,7 +44,24 @@ the other one (`saves/backup/` locally, `~/.gameServer/games/cardQuest/history/`
 `gradlew run` (and `-Pdev`) never contacts the server; `-Dcardquest.network=true` forces it.
 A manual server address goes to `~/.cardquest/sync.properties` as `server=host` or `server=host:port`.
 
+## Web version
+
+```
+./gradlew wasmJsBrowserDevelopmentRun   # opens the game in the browser (dev build, reloads on changes)
+./gradlew wasmJsBrowserDistribution     # build/dist/wasmJs/productionExecutable: the static web page to upload
+```
+
+The same game compiled to WebAssembly (Kotlin/Wasm); the folder above is plain static files, any static hosting works.
+Games are saved in the browser's localStorage (same JSON as the save files; this browser on this device only).
+`?dev` in the address shows the 🛠️ Dev tab. A browser has no system fonts, so the emoji and symbols the game uses come
+with it (`src/wasmJsMain/composeResources/font`) – after adding new emoji or symbols run `python tools/web-fonts.py`
+(needs `pip install fonttools`), otherwise they show as boxes on the web.
+
 ## Code map
+
+Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (exe: files, home server, updates),
+`src/wasmJsMain` (web: localStorage, fonts, `index.html`), `src/desktopTest` (tests and dev reports).
+
 
 | Package | What |
 |---|---|
@@ -52,10 +69,10 @@ A manual server address goes to `~/.cardquest/sync.properties` as `server=host` 
 | `battle/Battle.kt` | deterministic battle engine (turn order, targeting, skills, cooldowns, waves); UI-independent |
 | `content/Dungeons.kt` | the 10 dungeons × 20 stages, generated from a monster roster per dungeon (waves, levels, rarities, drop chances, fees) |
 | `game/Game.kt` | `GameState` (what's saved) and `Rules` (fight rewards, feeding, evolving, selling, buying, party) |
-| `game/SaveManager.kt` | named saved games (JSON), conversion of the old single save |
-| `game/ServerSaves.kt` | syncing the saved games with the home server (library from `../gameServer`) |
+| `game/SaveStore.kt` | named saved games (JSON) – shared logic; `SaveManager` (desktop: files, conversion of the old single save) and `BrowserSaveStore` (web: localStorage) store them |
+| `game/ServerSaves.kt` | (desktop) syncing the saved games with the home server (library from `../gameServer`) |
 | `ui/*` | Compose screens: saved games, starter pick, Cards, Party, Dungeons, Battle, Dev |
-| `resources/art/*.svg` | hand-drawn hero portraits (cards without one use their emoji) |
+| `composeResources/drawable/*.svg` | hand-drawn hero portraits (cards without one use their emoji) |
 
 ## Numbers (all in `Balance` / `StageDef`)
 

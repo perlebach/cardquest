@@ -606,10 +606,10 @@ private fun Corridor(outer: List<String>, inner: List<String>, distance: Float, 
         )
         for (i in 0 until n) {
             val y = spacing * (i - 1) + shift
-            Text(outer[Math.floorMod(i - step, outer.size)], fontSize = 54.sp, modifier = Modifier.offset(ox - 150.dp, y))
-            Text(inner[Math.floorMod(i - step, inner.size)], fontSize = 30.sp, modifier = Modifier.offset(ox - 70.dp, y + spacing / 2))
-            Text(outer[Math.floorMod(i - step + 2, outer.size)], fontSize = 54.sp, modifier = Modifier.offset(ox + gridW + 80.dp, y + spacing / 3))
-            Text(inner[Math.floorMod(i - step + 1, inner.size)], fontSize = 30.sp, modifier = Modifier.offset(ox + gridW + 30.dp, y + spacing * 5 / 6))
+            Text(outer[(i - step).mod(outer.size)], fontSize = 54.sp, modifier = Modifier.offset(ox - 150.dp, y))
+            Text(inner[(i - step).mod(inner.size)], fontSize = 30.sp, modifier = Modifier.offset(ox - 70.dp, y + spacing / 2))
+            Text(outer[(i - step + 2).mod(outer.size)], fontSize = 54.sp, modifier = Modifier.offset(ox + gridW + 80.dp, y + spacing / 3))
+            Text(inner[(i - step + 1).mod(inner.size)], fontSize = 30.sp, modifier = Modifier.offset(ox + gridW + 30.dp, y + spacing * 5 / 6))
         }
         if (walking) Text("👣 Exploring…",color = Palette.text.copy(alpha = 0.6f), fontSize = 22.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 140.dp))
     }
