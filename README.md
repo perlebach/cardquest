@@ -100,7 +100,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Monster rarity ladder**: white, green, green+, blue, blue+, blue++, purple, purple+, purple++, purple+++, legendary (`Balance.ladderStep`).
   Dungeon d shows step d−1 in stages 1-5, step d in 6-15 and step d+1 in 16-20 (mixed with one step lower; the share of the new step
   grows through the band); the X-20 boss is one step above. So: green from 1-6, green+ from 1-16, the only blue of the woods is the 1-20 boss,
-  first collectible blue in 2-16, blue+ boss in 2-20, first collectible blue+ in 3-16, blue++ boss in 3-20, …, legendary boss in 8-20, first legendary monsters in 9-16 (they never drop), legendary++ boss in 10-20.
+  first collectible blue in 2-16, blue+ boss in 2-20, first collectible blue+ in 3-16, blue++ boss in 3-20, …, legendary boss in 8-20, first legendary monsters in 9-16, legendary++ boss in 10-20.
   A monster whose level would be above its rarity's max level gets one more "+" instead (same strength).
   **Mixed rarities** (`MIXED_RARITIES` in `content/Dungeons.kt`, 2026-11-12): then every regular monster gets a ladder step picked evenly from white
   up to the one above, so a "rare" stage is about ¼ rare, ¼ green+, ¼ green, ¼ white. It keeps the original's strength, so lower rarities have higher
@@ -135,6 +135,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Skill level-up**: every eaten uncommon+ card with the same skill adds a chance of 10 / 20 / 30 / 40 % (uncommon / rare / epic / legendary; was 10 / 30 / 50 / 70);
   the chances of one feeding add up (max 100 %) and one roll decides +1 level (`Rules.skillUpChance`, `Balance.SKILL_UP_CHANCE`).
 * **Evolution**: max level + `evo+1` cards of the same type and rarity + `50 × 2^ladderStep` gold (100 for green, 200 for green+, …; was ×4, slowed down with the fees).
+  A hero can go from epic+++ to legendary only after stage 10-20 has been beaten (≥ 1 star, `Rules.LEGENDARY_UNLOCK_STAGE`).
 * **Buying hero cards** (Cards tab → 🛒 Buy cards): any hero as a level 1 green card. 100 gold, +50 per purchase, at most 1000
   (`Balance.HERO_PRICE_START / _STEP / _MAX`, `GameState.heroesBought`). Spare copies are what heroes need to evolve and rarity-up.
   Once a hero has been evolved to a higher rarity (the player owns it at blue, purple, …), the shop also sells it as a level 1 card of that
@@ -150,7 +151,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
   (white, green, green+, …), and the dungeon's first front-row monster at ladder step d+2 (rare Snail, rare+ Skeleton, rare++ Rhino, …); from dungeon 8 on
   (where that would be a legendary monster) gold instead: 1M / 2M / 4M for dungeons 8 / 9 / 10.
   A dungeon with all 60 stars is shown folded up (click its title to open it).
-* **Drops**: common 25 %, uncommon 20 %, rare 15 %, epic 10 %, legendary 0 % (never) per monster, ×0.75 per "+" (bosses drop food instead) – `monster()` in `content/Dungeons.kt`.
+* **Drops**: common 25 %, uncommon 20 %, rare 15 %, epic 10 %, legendary 5 % per monster, ×0.75 per "+" (bosses drop food instead) – `monster()` in `content/Dungeons.kt`.
   Rolled the moment a monster is beaten (the card flies into the 🎁 Loot tray) and given to the player if the fight is won. Dropped cards have the monster's rarity/evo and 100 % of its level (`LOOT_LEVEL_SHARE`, was 80 %; rounded down, at least 1, capped like any card: `Balance.lootLevel`). A looted card carries the XP of its level, so it feeds exactly like the same card raised to that level by the player.
 
 * **Party**: at most one hero of each class (`Rules.heroTwin`); monsters can be doubled.

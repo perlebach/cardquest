@@ -240,8 +240,7 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
                 rarity = r; evo = ev
             }
         }
-        // legendary monsters never drop their card
-        val drop = when (rarity) { COMMON -> 0.25; UNCOMMON -> 0.2; RARE -> 0.15; EPIC -> 0.1; LEGENDARY -> 0.0 } * 0.75.pow(evo)
+        val drop = when (rarity) { COMMON -> 0.25; UNCOMMON -> 0.2; RARE -> 0.15; EPIC -> 0.1; LEGENDARY -> 0.05 } * 0.75.pow(evo)
         return MonsterSpec(type, level, rarity, evo, listOf(slot), drop, tier, hpF, atkF)
     }
 
@@ -311,7 +310,7 @@ private fun milestones(d: Int, roster: Roster): List<Milestone> {
     return listOf(
         Milestone(20, gold = 1000L * (1L shl (d - 1))),
         Milestone(40, cards = listOf(CardReward(CardType.FOOD, foodRarity, foodEvo, 5))),
-        // from dungeon 8 on the monster would be legendary (they never drop): gold for the legendary heroes instead
+        // from dungeon 8 on the monster would be legendary: gold for the legendary heroes instead
         if (d >= 8) Milestone(60, gold = 1_000_000L shl (d - 8))
         else Milestone(60, cards = listOf(CardReward(roster.front.first(), monRarity, monEvo, level = monRarity.maxLevel))),
     )

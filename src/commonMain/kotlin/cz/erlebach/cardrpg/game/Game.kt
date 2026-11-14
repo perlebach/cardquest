@@ -439,6 +439,9 @@ object Rules {
         data class No(val reason: String) : EvolveCheck
     }
 
+    /** Heroes can evolve from epic+++ to legendary only once this stage has been beaten (at least 1 star). */
+    const val LEGENDARY_UNLOCK_STAGE = "10-20"
+
     fun evolveCheck(s: GameState, c: OwnedCard): EvolveCheck {
         if (c.type.food) return EvolveCheck.No("Food cards can't evolve – feed them to another card!")
         val result = when {
@@ -447,6 +450,8 @@ object Rules {
             c.type.hero -> return EvolveCheck.No("This card is at its very best already!")
             else -> return EvolveCheck.No("Monster cards can't go above ${c.stageLabel}.")
         }
+        if (result.rarity == Rarity.LEGENDARY && c.rarity != Rarity.LEGENDARY && s.stars(LEGENDARY_UNLOCK_STAGE) < 1)
+            return EvolveCheck.No("Beat stage $LEGENDARY_UNLOCK_STAGE to unlock evolving heroes to ${Rarity.LEGENDARY.label}.")
         if (!c.atRarityMaxLevel) return EvolveCheck.No("Reach level ${c.rarity.maxLevel} first.")
         return EvolveCheck.Ok(result, Balance.evolveGoldCost(c.rarity, c.evo), Balance.evolveMaterials(c.evo), c.rarity)
     }

@@ -83,12 +83,9 @@ fun InventoryScreen(model: AppModel) {
                 LazyVerticalGrid(GridCells.Adaptive(132.dp), Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(shopItems(s), key = { "${it.type}-${it.rarity}" }) { item ->
                         Box(Modifier.padding(4.dp), contentAlignment = Alignment.Center) {
-                            val have = s.cards.count { it.type == item.type && it.rarity == item.rarity }
                             CardFace(
                                 item.look(), width = 124.dp, selected = item == buyItem,
-                                badge = if (item.type.food) "🪙 ${fmt(Balance.foodPrice(item.rarity))}"
-                                    else if (item.rarity != Balance.HERO_BUY_RARITY) "🪙 ${fmt(s.heroPrice(item.rarity))}"
-                                    else have.takeIf { it > 0 }?.let { "YOU HAVE $it" },
+                                badge = "🪙 ${fmt(if (item.type.food) Balance.foodPrice(item.rarity) else s.heroPrice(item.rarity))}",
                                 modifier = Modifier.clickable { buyItem = item },
                             )
                         }
@@ -116,7 +113,8 @@ fun InventoryScreen(model: AppModel) {
                     ) {
                         CardFace(
                             c.look(), width = 124.dp,
-                            selected = if (mode == Mode.VIEW) c.id == selectedId else isPicked,
+                            selected = mode == Mode.VIEW && c.id == selectedId,
+                            greyed = mode != Mode.VIEW && isPicked,
                             badge = when {
                                 mode == Mode.SELL -> (if (isPicked) "✔ " else "") + "🪙 ${fmt(c.sellPrice)}"
                                 mode != Mode.VIEW && isPicked -> "✔ PICKED"
@@ -200,8 +198,8 @@ private fun CardDetail(model: AppModel, c: OwnedCard, onFeed: () -> Unit, onEvol
         Text("Worth 📈 ${fmt(c.sacrificeValue)} XP when fed to another card.", color = Palette.good, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Text("Pick the card that should eat it, then 🍖 Feed.", color = Palette.textDim, fontSize = 12.sp)
     } else {
+        // (removing from the party is done in the Party tab)
         if (s.inParty(c.id)) {
-            OutlinedButton({ model.update { Rules.removeFromParty(it, c.id) } }, Modifier.fillMaxWidth(), enabled = s.partyCards.size > 1) { Text("Remove from party") }
         } else if (s.party.any { it == null } && s.party.count { it != null } < Balance.MAX_PARTY) {
             Button({ model.update { Rules.addToParty(it, c.id) } }, Modifier.fillMaxWidth()) { Text("➕ Add to party") }
         } else {
@@ -313,9 +311,7 @@ private fun FeedPanel(model: AppModel, target: OwnedCard, picked: Set<Long>, sho
         color = Color(0xFFFFC34D), fontSize = 12.sp,
     )
     Spacer(Modifier.height(10.dp))
-    OutlinedButton({ onPick(shown.filter { it.rarity == Rarity.COMMON && !it.type.food }.map { it.id }.toSet()) }, Modifier.fillMaxWidth()) { Text("Pick all common cards") }
-    Spacer(Modifier.height(6.dp))
-    OutlinedButton({ onPick(shown.filter { it.type.food }.map { it.id }.toSet()) }, Modifier.fillMaxWidth(), enabled = shown.any { it.type.food }) { Text("🍰 Pick all food cards") }
+    OutlinedButton({ onPick(shown.map { it.id }.toSet()) }, Modifier.fillMaxWidth(), enabled = shown.isNotEmpty()) { Text("Pick all cards") }
     Spacer(Modifier.height(6.dp))
     Button(
         {
@@ -383,9 +379,7 @@ private fun SellPanel(model: AppModel, picked: Set<Long>, shown: List<OwnedCard>
     Text("Picked: ${cards.size} cards", color = Palette.text)
     Text("You get: 🪙 ${cards.sumOf { it.sellPrice }}", color = Palette.gold, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(10.dp))
-    OutlinedButton({
-        onPick(shown.filter { it.rarity == Rarity.COMMON && !it.type.food }.map { it.id }.toSet())
-    }, Modifier.fillMaxWidth()) { Text("Pick all common cards") }
+    OutlinedButton({ onPick(shown.map { it.id }.toSet()) }, Modifier.fillMaxWidth(), enabled = shown.isNotEmpty()) { Text("Sell all cards") }
     Spacer(Modifier.height(6.dp))
     Button({ if (model.update { Rules.sell(it, picked.toList()) }) onDone() }, Modifier.fillMaxWidth(), enabled = cards.isNotEmpty()) { Text("🪙 Sell!") }
     TextButton(onDone, Modifier.fillMaxWidth()) { Text("Cancel") }

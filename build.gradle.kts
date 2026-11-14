@@ -10,7 +10,7 @@ plugins {
 
 group = "cz.erlebach"
 // The game version: shown on the start screen (generated GameVersion.kt) and used for the msi. Raise it for each release.
-version = "1.0.2"
+version = "1.0.3"
 
 val generateVersion by tasks.registering {
   val version = project.version.toString()

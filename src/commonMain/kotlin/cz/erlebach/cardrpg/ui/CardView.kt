@@ -122,6 +122,7 @@ fun CardFace(
     maxHp: Int? = null,
     selected: Boolean = false,
     dimmed: Boolean = false,
+    greyed: Boolean = false,
     badge: String? = null,
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
@@ -135,6 +136,8 @@ fun CardFace(
             .alpha(if (dimmed) 0.45f else 1f)
             .shadow(if (selected) (14 * s).dp else (5 * s).dp, shape, ambientColor = if (selected) Palette.gold else Color.Black, spotColor = if (selected) Palette.gold else Color.Black)
             .clip(shape)
+            // greyed = picked for feeding / selling (a gold border would be lost on the gold "++" frame)
+            .then(if (greyed) Modifier.drawWithContent { drawContent(); drawRect(Color.Gray.copy(alpha = 0.5f)) } else Modifier)
             .background(if (orn != null) orn else rarityColor)
             .then(if (selected) Modifier.border((3 * s).dp, Palette.gold, shape) else Modifier)
             .padding(if (orn != null) (4 * s).dp else 0.dp)
