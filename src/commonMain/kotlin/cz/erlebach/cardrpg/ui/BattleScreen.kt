@@ -32,7 +32,10 @@ import cz.erlebach.cardrpg.battle.Fighter
 import cz.erlebach.cardrpg.battle.Phase
 import cz.erlebach.cardrpg.battle.Side
 import cz.erlebach.cardrpg.battle.SkillMode
+import cz.erlebach.cardrpg.battle.traitActive
+import cz.erlebach.cardrpg.content.Contest
 import cz.erlebach.cardrpg.content.Dungeons
+import cz.erlebach.cardrpg.game.ContestResult
 import cz.erlebach.cardrpg.game.FightRewards
 import cz.erlebach.cardrpg.game.Rules
 import cz.erlebach.cardrpg.model.Balance
@@ -51,6 +54,8 @@ private data class Projectile(val id: Long, val from: Int, val to: Int, val emoj
 private sealed interface Outcome {
     data class Won(val rewards: FightRewards) : Outcome
     data object Lost : Outcome
+    /** The contest ended (the party fell); the diamonds are kept. */
+    data class ContestOver(val result: ContestResult) : Outcome
 }
 
 /** All animation state of one battle. The engine runs one turn ahead; this holds what is *shown*. */
@@ -83,6 +88,8 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
     val loot = mutableStateListOf<Fighter>()
     /** Gold collected so far (including the first-win bonus). */
     var gold by mutableStateOf(0L)
+    /** Diamonds collected so far (contest). */
+    var diamonds by mutableStateOf(0L)
     var shownWave by mutableStateOf(0)
     private var ids = 0L
 
@@ -152,6 +159,7 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
                 is BattleEvent.Defeated -> removed[e.uid] = true
                 is BattleEvent.Looted -> { fighter(e.uid)?.let { loot += it }; removed[e.uid] = true }
                 is BattleEvent.Coins -> gold += e.amount * goldMultiplier
+                is BattleEvent.Diamonds -> diamonds += e.amount
                 else -> {}
             }
         }
@@ -200,11 +208,29 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
                     shakes[e.target] = (shakes[e.target] ?: 0) + 1
                     val dot = e.dot
                     when {
-                        dot != null -> float(e.target, "${dot.icon} -" + fmt(e.amount), if (dot == Affliction.BURNING) Color(0xFFFFA040) else Color(0xFFB0F060))
-                        else -> float(e.target, (if (e.blocked) "🛡️ -" else "-") + fmt(e.amount), if (e.blocked) Color(0xFF9FD3FF) else Color(0xFFFF6B6B))
+                        dot != null -> float(e.target, "${dot.icon} -" + fmt(e.amount), dotColor(dot))
+                        else -> {
+                            // a shield or a boss trait cut the damage: grey, with the icon of what protected the card
+                            val reduced = e.blocked || e.shieldedBy != null
+                            val icons = (if (e.crit) "💥 " else "") + (e.shieldedBy?.icon?.let { "$it " } ?: "") + (if (e.blocked) "🛡️ " else "")
+                            float(e.target, icons + "-" + fmt(e.amount), if (e.crit) Color(0xFFFF9A1E) else if (reduced) REDUCED_DAMAGE else Color(0xFFFF6B6B))
+                        }
                     }
                     if (dot != null) wait(250)
                     wait(90)
+                }
+                is BattleEvent.Dodged -> {
+                    float(e.uid, "💨 Dodged!", Color(0xFFB8F0FF))
+                    wait(200)
+                }
+                is BattleEvent.Resisted -> {
+                    float(e.uid, "🪨 Resisted!", Color(0xFFD8D0C0))
+                    wait(200)
+                }
+                is BattleEvent.Diamonds -> {
+                    float(e.uid, "💎 +${fmt(e.amount)}", DIAMOND)
+                    diamonds += e.amount
+                    wait(150)
                 }
                 is BattleEvent.Heal -> {
                     hp[e.target] = e.hpAfter
@@ -224,7 +250,7 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
                 }
                 is BattleEvent.Afflicted -> {
                     wait(120)
-                    float(e.uid, "${e.affliction.icon} ${e.affliction.label}!", if (e.affliction == Affliction.BURNING) Color(0xFFFFA040) else Color(0xFFB0F060))
+                    float(e.uid, "${e.affliction.icon} ${e.affliction.label}!", dotColor(e.affliction))
                     tick++
                     wait(250)
                 }
@@ -242,10 +268,17 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
                         BossTrait.REGENERATION -> "🩸 Deep wound – no more healing!"
                         BossTrait.STONE_SKIN -> "💥 Stone skin shattered!"
                         BossTrait.AMBUSHER -> "💡 Revealed!"
-                        else -> "💥 Weakened!"
+                        BossTrait.SWARM -> "💥 Swarm gone – no more cover!"
+                        BossTrait.COMMANDER -> "💥 Helpers down – no more cover!"
+                        BossTrait.FIRESTORM -> "💧 Your team is fire-proof!"
+                        null -> "💥 Weakened!"
                     }
                     float(e.uid, text, Color(0xFFD0B0FF))
                     tick++
+                    wait(700)
+                }
+                is BattleEvent.CounterMissed -> {
+                    float(e.uid, "❌ Missed ${battle.fighter(e.boss)?.name ?: "the boss"}!", REDUCED_DAMAGE)
                     wait(500)
                 }
                 is BattleEvent.Extinguished -> { float(e.uid, "💧 Fire out!", Color(0xFF9FD3FF)); wait(150) }
@@ -275,7 +308,7 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
                     finishLunge()
                     actor = null
                     wait(400)
-                    banner = if (e.wave + 1 < battle.waveCount) "Wave ${e.wave + 1} cleared! 🎉" else "Victory! 🏆"
+                    banner = if (battle.waveCount.let { it == null || e.wave + 1 < it }) "Wave ${e.wave + 1} cleared! 🎉" else "Victory! 🏆"
                     wait(1100)
                     banner = null
                 }
@@ -307,7 +340,8 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
         coroutineScope {
             launch { walk.animateTo(1f, tween((1800 / speed).toInt(), easing = FastOutSlowInEasing)) }
             delay((300 / speed).toLong())
-            banner = "Wave ${index + 1} / ${battle.waveCount}" + if (battle.enemies.any { it.type.boss }) "  👑 BOSS!" else ""
+            banner = (if (battle.endless) "Wave ${index + 1}" else "Wave ${index + 1} / ${battle.waveCount}") +
+                if (battle.enemies.any { it.type.boss }) "  👑 BOSS!" else ""
         }
         banner = null
         walking = false
@@ -321,30 +355,43 @@ private class BattleUi(val battle: Battle, val goldMultiplier: Int) {
 
 @Composable
 fun BattleScreen(model: AppModel, fight: ActiveFight) {
-    val ui = remember(fight) { BattleUi(fight.battle, Rules.goldMultiplier(model.state, fight.stage)) }
-    val dungeon = Dungeons.all.first { it.id == fight.stage.dungeon }
+    val stage = fight.stage
+    val ui = remember(fight) { BattleUi(fight.battle, if (stage == null) 1 else Rules.goldMultiplier(model.state, stage)) }
+    val dungeon = stage?.let { st -> Dungeons.all.first { it.id == st.dungeon } }
     // changing `skipped` cancels the animated run and finishes the fight instantly
     LaunchedEffect(fight, ui.skipped) {
         ui.speed = model.state.battleSpeed.toFloat()
         val onEnd: (Battle) -> Outcome = { battle ->
-            var rewards: FightRewards? = null
-            model.update { s -> Rules.finishFight(s, fight.stage, battle).also { rewards = it.second }.first }
-            rewards?.let { Outcome.Won(it) } ?: Outcome.Lost
+            if (stage == null) {
+                var result: ContestResult? = null
+                model.update { s -> Rules.finishContest(s, battle).also { result = it.second }.first }
+                Outcome.ContestOver(result ?: ContestResult(battle.wavesCleared, battle.diamonds, false))
+            } else {
+                var rewards: FightRewards? = null
+                model.update { s -> Rules.finishFight(s, stage, battle).also { rewards = it.second }.first }
+                rewards?.let { Outcome.Won(it) } ?: Outcome.Lost
+            }
         }
         if (ui.skipped) ui.skipToEnd(onEnd) else ui.run(onEnd)
     }
     @Suppress("UNUSED_VARIABLE") val t = ui.tick // re-read engine state (guard, cooldowns) every turn
     var confirmLeave by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(dungeon.bg), Palette.feltDark)))) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(dungeon?.bg ?: ARENA_BG), Palette.feltDark)))) {
         // ---- top bar
         Row(
             Modifier.fillMaxWidth().background(Color(0x66000000)).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("${dungeon.emoji} ${dungeon.name} ${fight.stage.key}", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Palette.text)
+            Text(
+                if (dungeon == null || stage == null) "🏟️ Contest" else "${dungeon.emoji} ${dungeon.name} ${stage.key}",
+                fontSize = 20.sp, fontWeight = FontWeight.Black, color = Palette.text,
+            )
             Spacer(Modifier.width(20.dp))
-            Text("Wave ${ui.shownWave + 1}/${fight.battle.waveCount}   Round ${fight.battle.round}", color = Palette.textDim, fontSize = 16.sp)
+            Text(
+                "Wave ${ui.shownWave + 1}${fight.battle.waveCount?.let { "/$it" } ?: ""}   Round ${fight.battle.round}",
+                color = Palette.textDim, fontSize = 16.sp,
+            )
             Spacer(Modifier.weight(1f))
             Text("Skills:", color = Palette.text)
             Spacer(Modifier.width(6.dp))
@@ -390,12 +437,18 @@ fun BattleScreen(model: AppModel, fight: ActiveFight) {
             // ---- corridor / table
             // always shown: the scenery scrolls while walking and stays put while the party fights.
             // Distance = finished walks + the current one, so it continues seamlessly from wave to wave.
-            Corridor(dungeon.scenery, dungeon.sceneryInner, ui.shownWave + ui.walk.value, ui.walking, ox, gridW, Modifier.fillMaxSize())
+            // (in the contest a cheering crowd stands on both sides)
+            Corridor(
+                dungeon?.scenery ?: Contest.crowd, dungeon?.sceneryInner ?: Contest.crowdInner,
+                ui.shownWave + ui.walk.value, ui.walking, ox, gridW, Modifier.fillMaxSize(),
+                walkingText = if (dungeon == null) "📣 Next challengers…" else "👣 Exploring…",
+            )
             // ---- loot tray (left side): dropped cards fly here
             val trayW = 150.dp
             val trayX = ((ox - trayW) / 2).coerceAtLeast(8.dp)
             val trayY = 16.dp
-            LootTray(ui.loot, ui.gold, ui.goldMultiplier > 1, model.state.playerLevel, Modifier.offset(trayX, trayY).width(trayW))
+            if (stage == null) DiamondTray(ui.diamonds, Modifier.offset(trayX, trayY).width(trayW))
+            else LootTray(ui.loot, ui.gold, ui.goldMultiplier > 1, model.state.playerLevel, Modifier.offset(trayX, trayY).width(trayW))
             // empty spots
             for (side in listOf(true, false)) for (slot in 0..5) {
                 val r = slotRect(listOf(slot), side, cardW, cardH, gap)
@@ -482,16 +535,51 @@ fun BattleScreen(model: AppModel, fight: ActiveFight) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
             title = { Text("Run away?") },
-            text = { Text("You will lose this fight and the entry fee.") },
+            text = {
+                Text(
+                    if (stage == null) "The contest ends here. You keep the 💎 ${fmt(fight.battle.diamonds)} diamonds won so far; the ticket is used up."
+                    else "You will lose this fight and the entry fee."
+                )
+            },
             confirmButton = {
                 Button({
                     confirmLeave = false
-                    model.update { it.copy(losses = it.losses + 1) }
+                    if (stage == null) {
+                        model.update { Rules.finishContest(it, fight.battle).first }
+                        model.tab = Tab.CONTEST
+                    } else model.update { it.copy(losses = it.losses + 1) }
                     model.fight = null
                 }) { Text("Run away") }
             },
             dismissButton = { TextButton({ confirmLeave = false }) { Text("Keep fighting!") } },
         )
+    }
+}
+
+/** Damage cut by a shield or a boss trait. */
+private val REDUCED_DAMAGE = Color(0xFFB4B4B4)
+/** Colour of diamond texts (light blue, like the 💎 icon). */
+val DIAMOND = Color(0xFF6BD5FF)
+/** Background of the contest arena. */
+private const val ARENA_BG = 0xFF6A3A2A
+
+private fun dotColor(a: Affliction) = if (a == Affliction.BURNING) Color(0xFFFFD84A) else Color(0xFFB0F060)
+
+/**
+ * The boss's trait on its card: the icon while it works (an undying boss also shows its spare lives),
+ * faded and crossed out once it's broken.
+ */
+@Composable
+private fun TraitBadge(f: Fighter, modifier: Modifier) {
+    val trait = f.trait ?: return
+    val active = f.traitActive
+    Box(modifier.background(Color(0xAA000000), CircleShape).padding(horizontal = 4.dp, vertical = 1.dp)) {
+        Text(
+            trait.icon + if (trait == BossTrait.UNDYING && active) "×${f.spareLives}" else "",
+            fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold,
+            modifier = Modifier.alpha(if (active) 1f else 0.4f),
+        )
+        if (!active) Text("✖", fontSize = 14.sp, color = Color(0xFFFF5050), fontWeight = FontWeight.Black, modifier = Modifier.align(Alignment.Center))
     }
 }
 
@@ -519,7 +607,7 @@ private fun BattleCard(ui: BattleUi, f: Fighter, r: DpRect, dx: Dp, dy: Dp, deal
             .rotate((1 - vanish) * (if (f.side == Side.PLAYER) -25f else 25f) + fly * 360f)
     ) {
         CardFace(
-            CardLook(f.type, f.rarity, f.evo, f.level, f.maxHp, f.atk),
+            CardLook(f.type, f.rarity, f.evo, f.level, f.maxHp, f.atk, passiveLevel = f.passiveLevel),
             width = r.w, height = r.h,
             currentHp = ui.hp[f.uid] ?: f.hp, maxHp = f.maxHp,
             selected = ui.actor == f.uid,
@@ -536,6 +624,7 @@ private fun BattleCard(ui: BattleUi, f: Fighter, r: DpRect, dx: Dp, dy: Dp, deal
                         .background(Color(0xAA000000), CircleShape).padding(horizontal = 4.dp, vertical = 1.dp),
                 )
             }
+            if (f.trait != null && f.alive) TraitBadge(f, Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 18.dp))
             if (f.skill != null && f.side == Side.PLAYER && f.alive) {
                 Text(
                     if (f.cooldown > 0) "⏳${f.cooldown}" else "✨",
@@ -593,7 +682,10 @@ private fun FloatingText(fl: Floater, x: Dp, y: Dp, speed: Float, onDone: () -> 
  * during a fight it stands still. [distance] counts walks (1 = one walk between waves).
  */
 @Composable
-private fun Corridor(outer: List<String>, inner: List<String>, distance: Float, walking: Boolean, ox: Dp, gridW: Dp, modifier: Modifier) {
+private fun Corridor(
+    outer: List<String>, inner: List<String>, distance: Float, walking: Boolean, ox: Dp, gridW: Dp, modifier: Modifier,
+    walkingText: String = "👣 Exploring…",
+) {
     BoxWithConstraints(modifier.clip(RoundedCornerShape(0.dp))) {
         val spacing = 120.dp
         val n = (maxHeight / spacing).toInt() + 3
@@ -612,7 +704,22 @@ private fun Corridor(outer: List<String>, inner: List<String>, distance: Float, 
             Text(outer[(i - step + 2).mod(outer.size)], fontSize = 54.sp, modifier = Modifier.offset(ox + gridW + 80.dp, y + spacing / 3))
             Text(inner[(i - step + 1).mod(inner.size)], fontSize = 30.sp, modifier = Modifier.offset(ox + gridW + 30.dp, y + spacing * 5 / 6))
         }
-        if (walking) Text("👣 Exploring…",color = Palette.text.copy(alpha = 0.6f), fontSize = 22.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 140.dp))
+        if (walking) Text(walkingText, color = Palette.text.copy(alpha = 0.6f), fontSize = 22.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 140.dp))
+    }
+}
+
+/** Diamonds won in this contest so far (kept however it ends). */
+@Composable
+private fun DiamondTray(diamonds: Long, modifier: Modifier) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x66000000))
+            .border(2.dp, DIAMOND.copy(alpha = 0.6f), RoundedCornerShape(14.dp)).padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("💎 Diamonds", color = DIAMOND, fontWeight = FontWeight.Black, fontSize = 18.sp)
+        Text("yours to keep!", color = Palette.textDim, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("💎 ${fmt(diamonds)}", color = DIAMOND, fontWeight = FontWeight.Black, fontSize = 22.sp)
     }
 }
 
@@ -682,7 +789,7 @@ private fun BoxScope.ResultOverlay(model: AppModel, fight: ActiveFight, outcome:
                     is Outcome.Won -> {
                         val r = outcome.rewards
                         Text("🏆 Victory!", fontSize = 44.sp, fontWeight = FontWeight.Black, color = Palette.gold)
-                        if (r.firstClear) Text("First time beating ${fight.stage.key}! Double gold!", color = Palette.good, fontSize = 16.sp)
+                        if (r.firstClear) Text("First time beating ${fight.stage?.key}! Double gold!", color = Palette.good, fontSize = 16.sp)
                         StarsLine(r.fightStars, 30)
                         Text(
                             listOfNotNull(
@@ -693,7 +800,7 @@ private fun BoxScope.ResultOverlay(model: AppModel, fight: ActiveFight, outcome:
                             color = if (r.fightStars > r.starsBefore) Palette.gold else Palette.textDim, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                         )
                         for (m in r.milestones) Text(
-                            "🏅 ${m.stars} stars in ${Dungeons.all.first { it.id == fight.stage.dungeon }.name}! Reward: ${m.label}",
+                            "🏅 ${m.stars} stars in ${Dungeons.all.first { it.id == fight.stage?.dungeon }.name}! Reward: ${m.label}",
                             color = Palette.good, fontSize = 18.sp, fontWeight = FontWeight.Black,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -724,10 +831,25 @@ private fun BoxScope.ResultOverlay(model: AppModel, fight: ActiveFight, outcome:
                             }
                         }
                     }
+                    is Outcome.ContestOver -> {
+                        val r = outcome.result
+                        Text("🏟️ What a contest!", fontSize = 42.sp, fontWeight = FontWeight.Black, color = DIAMOND)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Your party beat ${r.waves} ${if (r.waves == 1) "wave" else "waves"}" + if (r.newBest) " – a new record! 🎉" else ".",
+                            color = if (r.newBest) Palette.gold else Palette.text, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                        )
+                        Text("💎 +${fmt(r.diamonds)} diamonds (you have ${fmt(s.diamonds)})", color = DIAMOND, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Spend diamonds in the 🏟️ Contest tab: they teach your heroes passive abilities.",
+                            color = Palette.textDim, fontSize = 15.sp, textAlign = TextAlign.Center,
+                        )
+                    }
                     Outcome.Lost -> {
                         Text("😢 Your party needs a rest!", fontSize = 38.sp, fontWeight = FontWeight.Black, color = Palette.text)
                         Spacer(Modifier.height(10.dp))
-                        Text("You keep all your cards. Only the entry fee (🪙 ${fight.stage.entryFee}) is gone.", color = Palette.text, fontSize = 18.sp)
+                        Text("You keep all your cards. Only the entry fee (🪙 ${fight.stage?.entryFee ?: 0}) is gone.", color = Palette.text, fontSize = 18.sp)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "Tips: win easier stages to level up, feed spare cards to your best card, put tough cards in the front row, or try ✋ I decide to use skills at the best moment.",
@@ -743,6 +865,17 @@ private fun BoxScope.ResultOverlay(model: AppModel, fight: ActiveFight, outcome:
                 OutlinedButton({ model.fight = null; model.tab = Tab.CARDS }) { Text("🃏 My cards") }
                 OutlinedButton({ model.fight = null; model.tab = Tab.PARTY }) { Text("👥 Party") }
                 val again = fight.stage
+                if (again == null) {
+                    OutlinedButton({ model.fight = null; model.tab = Tab.CONTEST }) { Text("🏟️ Contest") }
+                    Button(
+                        {
+                            var next: ActiveFight? = null
+                            if (model.update { gs -> Rules.startContest(gs).let { (ns, b) -> next = ActiveFight(null, b); ns } }) model.fight = next
+                        },
+                        enabled = s.contestTickets > 0,
+                    ) { Text("🔁 Go again (🎟️ ${s.contestTickets} left)") }
+                    return@Row
+                }
                 Button(
                     {
                         var next: ActiveFight? = null

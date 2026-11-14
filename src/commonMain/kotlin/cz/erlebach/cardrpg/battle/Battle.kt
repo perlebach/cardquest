@@ -3,6 +3,7 @@ package cz.erlebach.cardrpg.battle
 import cz.erlebach.cardrpg.model.Balance
 import cz.erlebach.cardrpg.model.BossTrait
 import cz.erlebach.cardrpg.model.CardType
+import cz.erlebach.cardrpg.model.Passive
 import cz.erlebach.cardrpg.model.Rarity
 import cz.erlebach.cardrpg.model.Skill
 import kotlin.math.max
@@ -49,7 +50,13 @@ class Fighter(
     val skillLevel: Int = 1,
     /** Rounds to wait after using the skill (player heroes can shorten it by meditating). */
     val skillCooldown: Int = Balance.SKILL_COOLDOWN,
+    /** Passive ability level of a player hero (0 = none, see [Passive]). */
+    val passiveLevel: Int = 0,
+    /** Diamonds for beating it (contest monsters only). */
+    val diamonds: Long = 0,
 ) {
+    /** The passive ability working in this fight (player heroes that bought one). */
+    val passive: Passive? = if (side == Side.PLAYER && passiveLevel > 0) Passive.of(type) else null
     var hp = maxHp
     var cooldown = 0
     var guard = 0
@@ -92,8 +99,22 @@ sealed interface BattleEvent {
     data class TurnStart(val uid: Int) : BattleEvent
     data class SkipTurn(val uid: Int) : BattleEvent
     data class Attack(val attacker: Int, val targets: List<Int>, val skill: Skill?) : BattleEvent
-    /** [dot] = the damage comes from burning/poison at the start of the card's turn. */
-    data class Damage(val target: Int, val amount: Int, val hpAfter: Int, val blocked: Boolean, val dot: Affliction? = null) : BattleEvent
+    /**
+     * [dot] = the damage comes from burning/poison at the start of the card's turn; [blocked] = a raised shield cut it;
+     * [shieldedBy] = a boss trait cut it (the boss's own, or the one of the boss its helper serves).
+     */
+    data class Damage(
+        val target: Int, val amount: Int, val hpAfter: Int, val blocked: Boolean,
+        val dot: Affliction? = null, val shieldedBy: BossTrait? = null,
+        /** [Passive.KEEN_EYE] doubled it. */
+        val crit: Boolean = false,
+    ) : BattleEvent
+    /** [Passive.EVASION]: [uid] dodged a hit (no damage). */
+    data class Dodged(val uid: Int) : BattleEvent
+    /** [Passive.IRON_WILL]: [uid] shrugged off a stun / burning / poison (null = stun). */
+    data class Resisted(val uid: Int, val affliction: Affliction?) : BattleEvent
+    /** A beaten contest monster gave [amount] diamonds (kept however the contest ends). */
+    data class Diamonds(val uid: Int, val amount: Long) : BattleEvent
     /** [uid] starts burning / is poisoned (it takes damage at the start of each of its turns). */
     data class Afflicted(val uid: Int, val affliction: Affliction) : BattleEvent
     /** All debuffs of [uid] were removed (max-level Heal). */
@@ -104,8 +125,13 @@ sealed interface BattleEvent {
     data class Defeated(val uid: Int) : BattleEvent
     /** An undying boss got back up with full HP. */
     data class Revived(val uid: Int, val hpAfter: Int) : BattleEvent
-    /** The counter skill broke the boss's trait (spare lives drained, armor cracked, regeneration stopped). */
+    /**
+     * The boss's trait stopped working: the counter skill broke it (spare lives drained, armor cracked, regeneration
+     * stopped, the team made fire-proof…) or a swarm's / commander's last helper fell.
+     */
     data class TraitBroken(val uid: Int) : BattleEvent
+    /** Player card [uid] used the counter skill of [boss]'s trait, but the skill didn't reach the boss. */
+    data class CounterMissed(val uid: Int, val boss: Int) : BattleEvent
     /** Heal put out the fire on [uid] (any level). */
     data class Extinguished(val uid: Int) : BattleEvent
     /** The defeated monster [uid] dropped its card (it joins the player if the fight is won). */
@@ -143,13 +169,26 @@ const val FIRESTORM_BURN_SHARE = 1.0
 const val TRAIT_DAMAGE_TAKEN = 0.1
 /** [BossTrait.COMMANDER]: share of the damage that gets through while one of its helpers lives. */
 const val COMMANDER_DAMAGE_TAKEN = 0.25
+/** Traits whose counter skill breaks them with a single hit (so a use that leaves the trait intact missed the boss). */
+private val INSTANT_COUNTERS = setOf(BossTrait.STONE_SKIN, BossTrait.REGENERATION, BossTrait.UNDYING)
+
+/** The boss's trait still works (for the badge on its card); an undying boss loses it with its last spare life. */
+val Fighter.traitActive: Boolean
+    get() = trait != null && !traitBroken && (trait != BossTrait.UNDYING || spareLives > 0)
 
 class Battle(
     val party: List<Fighter>,
-    private val waveFactory: List<() -> List<Fighter>>,
+    /** Creates the monsters of wave n (0-based). */
+    private val waveAt: (Int) -> List<Fighter>,
+    /** Number of waves; null = endless (the contest: new waves keep coming until the party falls). */
+    val waveCount: Int?,
     private val random: Random = Random.Default,
 ) {
-    val waveCount get() = waveFactory.size
+    /** A dungeon fight: a fixed list of waves. */
+    constructor(party: List<Fighter>, waveFactory: List<() -> List<Fighter>>, random: Random = Random.Default) :
+        this(party, { waveFactory[it]() }, waveFactory.size, random)
+
+    val endless get() = waveCount == null
     var wave = -1; private set
     var round = 1; private set
     var enemies: List<Fighter> = emptyList(); private set
@@ -161,6 +200,10 @@ class Battle(
     val loot = mutableListOf<Fighter>()
     /** Gold from the defeated monsters that didn't drop their card (bosses always pay). */
     var gold = 0L; private set
+    /** Diamonds from the beaten contest monsters (kept even when the party falls). */
+    var diamonds = 0L; private set
+    /** Waves fully beaten. */
+    var wavesCleared = 0; private set
     /** A Heal made the party fire-proof (no more burning for the rest of the fight). */
     var fireproof = false; private set
     /** True once any player card has used its skill (the "no skills" star is lost). */
@@ -208,7 +251,7 @@ class Battle(
 
     private fun startWave(index: Int, ev: MutableList<BattleEvent>) {
         wave = index
-        enemies = waveFactory[index]()
+        enemies = waveAt(index)
         round = 1
         pointer = 0
         party.forEach {
@@ -306,9 +349,24 @@ class Battle(
         if (!t.alive) return
         if (a == Affliction.BURNING && t.side == Side.PLAYER && fireproof) return
         val had = if (a == Affliction.BURNING) t.burning else t.poison
+        if (resists(t)) { ev += BattleEvent.Resisted(t.uid, a); return }
         val now = max(had, amount)
         if (a == Affliction.BURNING) t.burning = now else t.poison = now
         if (had == 0) ev += BattleEvent.Afflicted(t.uid, a)
+    }
+
+    /** [Passive.IRON_WILL]: rolls whether [t] shrugs off a debuff. */
+    private fun resists(t: Fighter): Boolean {
+        val chance = t.passive?.debuffResist(t.passiveLevel) ?: 0.0
+        return chance > 0 && random.nextDouble() < chance
+    }
+
+    /** Stuns [t] (if it still stands and doesn't resist). */
+    private fun stun(t: Fighter, ev: MutableList<BattleEvent>) {
+        if (!t.alive) return
+        if (resists(t)) { ev += BattleEvent.Resisted(t.uid, null); return }
+        t.stunned = true
+        ev += BattleEvent.Stun(t.uid)
     }
 
     /** Guard protecting [t]: its own Shield Up, or a max-level Shield Up of a friend in the same row. */
@@ -326,10 +384,10 @@ class Battle(
             if (guardOf(t) > 0) {
                 ev += BattleEvent.Damage(t.uid, 0, t.hp, blocked = true)
                 crack(f, ev)
-            } else hit(t, f.atk * CRUSHER_FACTOR, ev)
+            } else hit(t, f.atk * CRUSHER_FACTOR, ev, by = f)
             return
         }
-        hit(t, if (f.trait == BossTrait.AMBUSHER) f.atk * AMBUSHER_FACTOR else f.atk, ev)
+        hit(t, if (f.trait == BossTrait.AMBUSHER) f.atk * AMBUSHER_FACTOR else f.atk, ev, by = f)
     }
 
     private fun useSkill(f: Fighter, ev: MutableList<BattleEvent>) {
@@ -352,7 +410,7 @@ class Battle(
                 ev += BattleEvent.Attack(f.uid, targets.map { it.uid }, s)
                 val each = max(1, (dmg / targets.size.toDouble()).roundToInt())
                 targets.forEach { hit(it, each, ev, skill = s, by = f) }
-                targets.filter { it.alive }.forEach { it.stunned = true; ev += BattleEvent.Stun(it.uid) }
+                targets.forEach { stun(it, ev) }
             }
             Skill.SOUL_LEECH -> {
                 val t = normalTarget(f) ?: return
@@ -362,14 +420,21 @@ class Battle(
                 } else null
                 val targets = listOfNotNull(t, behind)
                 ev += BattleEvent.Attack(f.uid, targets.map { it.uid }, s)
-                targets.forEach { heal(f, f, hit(it, dmg, ev, skill = s, by = f), ev) }
+                targets.forEach { t ->
+                    val dealt = hit(t, dmg, ev, skill = s, by = f)
+                    heal(f, f, dealt, ev, bonus = false)
+                    // Blood Pact: the drained life also flows to every other friend
+                    f.passive?.leechShare(f.passiveLevel)?.takeIf { it > 0 && dealt > 0 }?.let { share ->
+                        allies(f).filter { it.alive && it !== f }.forEach { heal(f, it, max(1, (dealt * share).roundToInt()), ev, bonus = false) }
+                    }
+                }
             }
             Skill.WHIRLWIND -> {
                 val alive = opponents(f).filter { it.alive }
                 val targets = alive.filter { o -> o.slots.any { it < 3 } }.ifEmpty { alive }
                 ev += BattleEvent.Attack(f.uid, targets.map { it.uid }, s)
                 targets.forEach { hit(it, dmg, ev, skill = s, by = f) }
-                if (f.maxSkill) targets.filter { it.alive }.forEach { it.stunned = true; ev += BattleEvent.Stun(it.uid) }
+                if (f.maxSkill) targets.forEach { stun(it, ev) }
             }
             Skill.FIREBALL -> {
                 val targets = opponents(f).filter { it.alive }
@@ -403,14 +468,24 @@ class Battle(
                 targets.forEach { heal(f, it, dmg, ev) }
                 // any Heal puts out the fire; against a firestorm it also makes the party fire-proof
                 targets.filter { it.burning > 0 }.forEach { it.burning = 0; ev += BattleEvent.Extinguished(it.uid) }
-                if (f.side == Side.PLAYER && enemies.any { it.trait == BossTrait.FIRESTORM }) fireproof = true
+                if (f.side == Side.PLAYER && enemies.any { it.trait == BossTrait.FIRESTORM }) {
+                    fireproof = true
+                    enemies.filter { it.alive && it.trait == BossTrait.FIRESTORM && !it.traitBroken }
+                        .forEach { it.traitBroken = true; ev += BattleEvent.TraitBroken(it.uid) }
+                }
                 // max level: also removes every debuff from all friends
                 if (f.maxSkill) targets.filter { it.debuffed }.forEach { it.cleanse(); ev += BattleEvent.Cleansed(it.uid) }
             }
         }
+        // a counter that breaks the trait on the spot, yet the boss still has it: the skill hit something else
+        if (f.side == Side.PLAYER) enemies.firstOrNull {
+            it.alive && !it.traitBroken && it.trait in INSTANT_COUNTERS && it.trait?.counter == s
+        }?.let { ev += BattleEvent.CounterMissed(f.uid, it.uid) }
     }
 
-    private fun heal(source: Fighter, t: Fighter, raw: Int, ev: MutableList<BattleEvent>) {
+    /** Heals [t]; [bonus] = the healer's passive healing bonus applies (not to life drained by Soul Leech). */
+    private fun heal(source: Fighter, t: Fighter, raw0: Int, ev: MutableList<BattleEvent>, bonus: Boolean = true) {
+        val raw = if (!bonus) raw0 else (raw0 * (1 + (source.passive?.healBonus(source.passiveLevel) ?: 0.0))).roundToInt()
         val amount = minOf(raw, t.maxHp - t.hp)
         if (amount <= 0 || !t.alive) return
         t.hp += amount
@@ -429,6 +504,25 @@ class Battle(
      */
     private fun hit(t: Fighter, raw0: Int, ev: MutableList<BattleEvent>, dot: Affliction? = null, skill: Skill? = null, by: Fighter? = null): Int {
         var raw = raw0
+        var shieldedBy: BossTrait? = null
+        var crit = false
+        if (dot == null) {
+            // passives of the defender (Evasion, Iron Will) and of the attacker (Rage, Holy Might, Keen Eye)
+            val dodge = t.passive?.dodgeChance(t.passiveLevel) ?: 0.0
+            if (dodge > 0 && random.nextDouble() < dodge) {
+                ev += BattleEvent.Dodged(t.uid)
+                return 0
+            }
+            val p = by?.passive
+            if (p != null) {
+                var factor = 1.0 + p.rageBonus(by.passiveLevel) * (by.maxHp - by.hp) / by.maxHp
+                if (t.type.boss) factor += p.bossDamage(by.passiveLevel)
+                val critChance = p.critChance(by.passiveLevel)
+                if (critChance > 0 && random.nextDouble() < critChance) { crit = true; factor *= 2 }
+                raw = max(1, (raw * factor).roundToInt())
+            }
+            t.passive?.damageReduction(t.passiveLevel)?.takeIf { it > 0 }?.let { raw = max(1, (raw * (1 - it)).roundToInt()) }
+        }
         if (dot == null) {
             val area = skill == Skill.FIREBALL || skill == Skill.WHIRLWIND
             if (skill == Skill.WHIRLWIND && t.trait == BossTrait.STONE_SKIN && !t.traitBroken) {
@@ -443,7 +537,10 @@ class Battle(
                 else -> (boss?.trait == BossTrait.SWARM && !area) || (boss?.trait == BossTrait.COMMANDER && area)
             }
             val share = if (t.trait == BossTrait.COMMANDER) COMMANDER_DAMAGE_TAKEN else TRAIT_DAMAGE_TAKEN
-            if (protected) raw = max(1, (raw * share).roundToInt())
+            if (protected) {
+                raw = max(1, (raw * share).roundToInt())
+                shieldedBy = t.trait ?: boss?.trait
+            }
         }
         // burning / poison go through shields
         val guard = if (dot != null) 0 else guardOf(t)
@@ -451,7 +548,7 @@ class Battle(
         val dmg = if (guard > 0) max(1, (raw * (100 - guard) / 100.0).roundToInt()) else raw
         val before = t.hp
         t.hp = max(0, t.hp - dmg)
-        ev += BattleEvent.Damage(t.uid, dmg, t.hp, guard > 0, dot)
+        ev += BattleEvent.Damage(t.uid, dmg, t.hp, guard > 0, dot, shieldedBy, crit)
         if (!t.traitBroken && ((skill == Skill.SOUL_LEECH && t.trait == BossTrait.UNDYING) ||
                 (skill == Skill.SNEAK_ATTACK && t.trait == BossTrait.REGENERATION))) {
             t.traitBroken = true
@@ -478,6 +575,15 @@ class Battle(
                     gold += t.gold
                     ev += BattleEvent.Coins(t.uid, t.gold)
                 }
+                if (t.diamonds > 0) {
+                    diamonds += t.diamonds
+                    ev += BattleEvent.Diamonds(t.uid, t.diamonds)
+                }
+                // the last helper fell: the swarm / commander loses its protection
+                enemies.filter {
+                    it.alive && !it.traitBroken && (it.trait == BossTrait.SWARM || it.trait == BossTrait.COMMANDER) &&
+                        enemies.none { o -> o.alive && o !== it }
+                }.forEach { it.traitBroken = true; ev += BattleEvent.TraitBroken(it.uid) }
             }
         }
         return before - t.hp
@@ -489,7 +595,8 @@ class Battle(
             ev += BattleEvent.Defeat
         } else if (enemies.none { it.alive }) {
             ev += BattleEvent.WaveCleared(wave)
-            if (wave + 1 < waveFactory.size) startWave(wave + 1, ev)
+            wavesCleared++
+            if (waveCount.let { it == null || wave + 1 < it }) startWave(wave + 1, ev)
             else { phase = Phase.WON; ev += BattleEvent.Victory }
         }
     }

@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import cz.erlebach.cardrpg.battle.Battle
+import cz.erlebach.cardrpg.content.Contest
 import cz.erlebach.cardrpg.content.StageDef
 import cz.erlebach.cardrpg.game.GameException
 import cz.erlebach.cardrpg.game.GameState
@@ -18,10 +19,12 @@ import cz.erlebach.cardrpg.game.SaveStore
 import cz.erlebach.cardrpg.localEpochDay
 
 enum class Tab(val title: String, val icon: String) {
-    CARDS("Cards", "🃏"), PARTY("Party", "🛡️"), DUNGEONS("Dungeons", "🏰"), MEDITATION("Meditation", "🪷"), DEV("Dev", "🛠️")
+    CARDS("Cards", "🃏"), PARTY("Party", "🛡️"), DUNGEONS("Dungeons", "🏰"), MEDITATION("Meditation", "🪷"), CONTEST("Contest", "🏟️"),
+    DEV("Dev", "🛠️")
 }
 
-class ActiveFight(val stage: StageDef, val battle: Battle)
+/** A running fight: a dungeon [stage], or the contest (null). */
+class ActiveFight(val stage: StageDef?, val battle: Battle)
 
 /** A game loaded from a file whose name is already used by [existing]: waits for "replace" or "keep both". */
 class PendingImport(val file: SaveFile, val existing: SaveSlot)
@@ -47,6 +50,8 @@ class AppModel(
     var slots by mutableStateOf(saves.list())
         private set
     var tab by mutableStateOf(Tab.DUNGEONS)
+    /** Grows every time the player clicks the tab that is already open: the screen goes back to its start (like "Back"). */
+    var tabReclicks by mutableStateOf(0)
     var fight by mutableStateOf<ActiveFight?>(null)
     var message by mutableStateOf<String?>(null)
     var pendingImport by mutableStateOf<PendingImport?>(null)
@@ -57,11 +62,13 @@ class AppModel(
 
     /**
      * Applies a rule; shows the error message instead of crashing on a [GameException].
-     * Every change also brings meditation up to date (opens the tab, adds the clues of passed nights).
+     * Every change also brings meditation and the contest up to date (opens the tabs, adds the clues and tickets of passed nights).
      */
     fun update(change: (GameState) -> GameState): Boolean = try {
-        val (new, gained) = Rules.collectClues(change(state), today())
+        val (afterClues, gained) = Rules.collectClues(change(state), today())
+        val new = Rules.collectTickets(afterClues, today()).first
         val opened = new.meditationUnlocked && !state.meditationUnlocked && new.started
+        val contestOpened = new.contestUnlocked && !state.contestUnlocked && new.started
         state = new
         slot?.let {
             saves.save(it, new)
@@ -70,6 +77,9 @@ class AppModel(
         if (gained.isNotEmpty()) message = cluesMessage(gained)
         else if (opened) message = "🪷 Your first ${Balance.MEDITATION_RARITY.label} hero! The Meditation tab is open: " +
             "${Balance.MEDITATION_RARITY.label} and better heroes meditate every night and find clues."
+        if (contestOpened) message = (message?.let { "$it\n\n" } ?: "") + "🏟️ Player level ${Contest.UNLOCK_LEVEL}! The Contest is open: " +
+            "fight wave after wave of strong monsters for 💎 diamonds, which teach your heroes passive abilities. " +
+            "You get ${Contest.START_TICKETS} entry tickets now and one more every day."
         true
     } catch (e: GameException) {
         message = e.message

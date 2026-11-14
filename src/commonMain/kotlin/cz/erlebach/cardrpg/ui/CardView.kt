@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import cz.erlebach.cardrpg.model.Balance
 import cz.erlebach.cardrpg.model.CardType
 import cz.erlebach.cardrpg.model.OwnedCard
+import cz.erlebach.cardrpg.model.Passive
 import cz.erlebach.cardrpg.model.Rarity
 import androidx.compose.foundation.Image
 import cz.erlebach.cardrpg.resources.Res
@@ -98,9 +99,11 @@ data class CardLook(
     val atk: Int,
     /** Meditation cooldown cuts, drawn as lotus flowers above the art. */
     val cooldownCuts: Int = 0,
+    /** Passive ability level (hero cards), drawn as its icon below the skill icon. */
+    val passiveLevel: Int = 0,
 )
 
-fun OwnedCard.look() = CardLook(type, rarity, evo, level, hp, atk, cooldownCuts)
+fun OwnedCard.look() = CardLook(type, rarity, evo, level, hp, atk, cooldownCuts, passiveLevel)
 
 /** Symbol of one skill cooldown cut (meditation). */
 const val LOTUS = "🪷"
@@ -174,13 +177,27 @@ fun CardFace(
                         fontSize = (11 * s).sp, lineHeight = (13 * s).sp, maxLines = 1,
                     )
                 }
-                if (look.rarity != Rarity.COMMON && !look.type.food) {
-                    Text(
-                        look.type.skill.icon,
-                        Modifier.align(Alignment.TopEnd).padding(top = (if (compact) 2 else 17).let { it * s }.dp, end = (2 * s).dp)
-                            .background(Color(0xAA000000), CircleShape).padding((2 * s).dp),
-                        fontSize = (10 * s).sp,
-                    )
+                // top right: the skill icon and, right below it, the passive's icon (its level is in the card detail)
+                val passive = if (look.passiveLevel > 0) Passive.of(look.type) else null
+                Column(
+                    Modifier.align(Alignment.TopEnd).padding(top = (if (compact) 2 else 17).let { it * s }.dp, end = (2 * s).dp),
+                    verticalArrangement = Arrangement.spacedBy((3 * s).dp),
+                ) {
+                    if (look.rarity != Rarity.COMMON && !look.type.food) {
+                        Text(
+                            look.type.skill.icon,
+                            Modifier.background(Color(0xAA000000), CircleShape).padding((2 * s).dp),
+                            fontSize = (10 * s).sp,
+                        )
+                    }
+                    if (passive != null) {
+                        Text(
+                            passive.icon,
+                            Modifier.background(Color(0xCC1A4A6A), CircleShape).border((1 * s).dp, Color(0xFF6BD5FF), CircleShape)
+                                .padding((2 * s).dp),
+                            fontSize = (10 * s).sp,
+                        )
+                    }
                 }
                 if (badge != null) {
                     Text(
@@ -201,7 +218,7 @@ fun CardFace(
             ) {
                 if (look.type.food) Column(Modifier.weight(1f)) {
                     Text("🍖 FOOD", color = Color(0xFFFFB0C8), fontSize = (11 * s).sp, lineHeight = (13 * s).sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text("${Balance.FOOD_XP_FACTOR.toInt()}× XP", color = Color(0xFFFFE08A), fontSize = (11 * s).sp, lineHeight = (13 * s).sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("📈 ${fmt(Balance.foodXp(look.rarity, look.evo))}", color = Color(0xFFFFE08A), fontSize = (11 * s).sp, lineHeight = (13 * s).sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 } else Column(Modifier.weight(1f)) {
                     Text("❤️ ${fmt(currentHp ?: look.hp)}", color = Color(0xFFFF9C9C), fontSize = (11 * s).sp, lineHeight = (13 * s).sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Text("⚔️ ${fmt(look.atk)}", color = Color(0xFFFFE08A), fontSize = (11 * s).sp, lineHeight = (13 * s).sp, fontWeight = FontWeight.Bold, maxLines = 1)

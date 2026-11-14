@@ -7,6 +7,7 @@ import cz.erlebach.cardrpg.battle.Fighter
 import cz.erlebach.cardrpg.battle.Phase
 import cz.erlebach.cardrpg.battle.Side
 import cz.erlebach.cardrpg.battle.SkillMode
+import cz.erlebach.cardrpg.battle.traitActive
 import cz.erlebach.cardrpg.content.CardReward
 import cz.erlebach.cardrpg.content.Dungeons
 import cz.erlebach.cardrpg.game.GameException
@@ -24,6 +25,8 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RulesTest {
@@ -267,11 +270,12 @@ class RulesTest {
     }
 
     @Test
-    fun `feeding gives 80 percent of the xp of the food's level plus bonus and levels skill`() {
+    fun `feeding gives the food's sacrifice xp and levels skill`() {
         var s = Rules.newGame(CardType.WARRIOR).copy(playerLevel = 50)
         val food = OwnedCard(10, CardType.SNAIL, Rarity.UNCOMMON, level = 5)
         s = s.copy(cards = s.cards + food)
-        assertEquals(Math.round(0.8 * Balance.cardXpTotal(5, false)) + Balance.sacrificeBonus(Rarity.UNCOMMON, 0), food.sacrificeValue)
+        // 500 × 1.08^effectiveLevel, uncommon level 5 = effective level 10
+        assertEquals(Math.round(500 * 1.08.pow(10)), food.sacrificeValue)
         val fed = Rules.feed(s, 1, listOf(10), alwaysLucky)
         assertEquals(1, fed.cards.size)
         // snail shares Shield Up with warrior: +20 % XP
@@ -481,43 +485,48 @@ class RulesTest {
     }
 
     @Test
-    fun `gold and sell price follow level, rarity and evolution`() {
-        assertTrue(Balance.cardGold(10, Rarity.COMMON, 0) > Balance.cardGold(1, Rarity.COMMON, 0))
-        assertTrue(Balance.cardGold(1, Rarity.UNCOMMON, 0) > Balance.cardGold(1, Rarity.COMMON, 0))
-        assertTrue(Balance.cardGold(1, Rarity.UNCOMMON, 1) > Balance.cardGold(1, Rarity.UNCOMMON, 0))
-        // selling is slowed down by 0.5 per ladder step (rare+ = step 4)
-        assertEquals(Math.round(Balance.SELL_FACTOR * Balance.cardGold(7, Rarity.RARE, 1) / 16.0), Balance.sellPrice(Rarity.RARE, 1, 7))
-        assertEquals(Balance.SELL_FACTOR * Balance.cardGold(7, Rarity.COMMON, 0), Balance.sellPrice(Rarity.COMMON, 0, 7))
+    fun `sell price follows the sacrifice xp at the same xp per gold`() {
+        assertTrue(Balance.sellPrice(Rarity.COMMON, 0, 10) > Balance.sellPrice(Rarity.COMMON, 0, 1))
+        assertTrue(Balance.sellPrice(Rarity.UNCOMMON, 0, 1) > Balance.sellPrice(Rarity.COMMON, 0, 1))
+        assertTrue(Balance.sellPrice(Rarity.UNCOMMON, 1, 1) > Balance.sellPrice(Rarity.UNCOMMON, 0, 1))
+        assertEquals(Math.round(Balance.sacrificeValue(7, Rarity.RARE, 1) / Balance.XP_PER_GOLD), Balance.sellPrice(Rarity.RARE, 1, 7))
+        assertEquals(Math.round(Balance.sacrificeValue(7, Rarity.COMMON, 0) / Balance.XP_PER_GOLD), Balance.sellPrice(Rarity.COMMON, 0, 7))
     }
 
     @Test
-    fun `stage gold keeps its ratio to the entry fee although both grow slower`() {
-        // gold of a monster = cardGold × 0.5^(tier/10); the old gold/fee ratio stays the same
-        val st = stage("3-11")
-        val m = st.waves.first().first()
-        val expected = Balance.cardGold(m.level, m.rarity, m.evo) * 0.5.pow(st.tier / 10.0)
-        assertTrue(abs(m.gold - expected) <= 1.0)
+    fun `stage gold is 3x the entry fee split among the monsters, a boss pays one fee more`() {
+        for (key in listOf("1-1", "3-11", "7-14")) {
+            val st = stage(key)
+            val all = st.waves.flatten()
+            val share = Balance.STAGE_GOLD_FEES * st.entryFee / all.size
+            assertTrue(all.all { abs(it.gold - share) <= 0.5 || it.gold == 1L }, key)
+        }
+        val st = stage("2-20")
+        val all = st.waves.flatten()
+        val share = Balance.STAGE_GOLD_FEES * st.entryFee / all.size
+        val boss = all.single { it.type.boss }
+        assertTrue(abs(boss.gold - (share + st.entryFee)) <= 0.5)
+        assertTrue(abs(st.maxGold - 4 * st.entryFee) <= all.size)
         assertEquals(100L, Balance.evolveGoldCost(Rarity.UNCOMMON, 0))
     }
 
     // ---------------------------------------------------------------- food cards
 
     @Test
-    fun `food prices give the same XP per gold, a bit more for rarer food`() {
-        assertEquals(500L, Balance.foodPrice(Rarity.COMMON))
+    fun `food prices give the same XP per gold as selling cards`() {
         val perGold = Rarity.entries.map { OwnedCard(0, CardType.FOOD, it).sacrificeValue.toDouble() / Balance.foodPrice(it) }
-        val white = perGold.first()
-        assertTrue(perGold.all { it >= white - 1e-9 && it <= white * 1.1 }, perGold.toString())
-        // 10x the XP of a normal card
-        val normal = OwnedCard(0, CardType.BAT, Rarity.RARE, 1).sacrificeValue
-        assertEquals(10 * normal, OwnedCard(0, CardType.FOOD, Rarity.RARE, 1).sacrificeValue)
+        assertTrue(perGold.all { abs(it - Balance.XP_PER_GOLD) < 0.05 }, perGold.toString())
+        // 1.5x the XP of a max-level card of the same rarity and evo
+        val maxed = OwnedCard(0, CardType.BAT, Rarity.RARE, 1, level = Rarity.RARE.maxLevel).sacrificeValue
+        assertEquals(Math.round(1.5 * maxed), OwnedCard(0, CardType.FOOD, Rarity.RARE, 1).sacrificeValue)
     }
 
     @Test
     fun `food cards stay level 1, can't fight, evolve or eat, and are bought in the shop`() {
         var s = Rules.newGame(CardType.WARRIOR).copy(gold = 1000, playerLevel = 30)
         s = Rules.buyFood(s, Rarity.COMMON)
-        assertEquals(500, s.gold)
+        assertEquals(1000 - Balance.foodPrice(Rarity.COMMON), s.gold)
+        assertTrue(s.gold < Balance.foodPrice(Rarity.UNCOMMON))
         val food = s.cards.last()
         assertEquals(CardType.FOOD, food.type)
         assertEquals(1, Rules.addCardXp(s, food, 1_000_000).level)
@@ -528,6 +537,9 @@ class RulesTest {
         val fed = Rules.feed(s, 1L, listOf(food.id))
         assertEquals(food.sacrificeValue, fed.card(1L)!!.totalXp)
         assertFailsWith<GameException> { Rules.buyFood(s, Rarity.UNCOMMON) }
+        // food can't be sold
+        assertEquals(0, food.sellPrice)
+        assertFailsWith<GameException> { Rules.sell(s, listOf(food.id)) }
     }
 
     @Test
@@ -667,8 +679,11 @@ class RulesTest {
         // an evolved card is worth the same as a dropped one of the same stage: its history doesn't count
         val evolved = OwnedCard(0, CardType.WOLF, Rarity.RARE, evo = 1, level = 7)
         assertEquals(Balance.sacrificeValue(7, Rarity.RARE, 1), evolved.sacrificeValue)
-        // above the rarity's max level it counts as the max level
-        assertEquals(OwnedCard(0, CardType.WOLF, Rarity.COMMON, level = 25).sacrificeValue, OwnedCard(0, CardType.WOLF, Rarity.COMMON, level = 40).sacrificeValue)
+        // above the rarity's max level it still grows, but only ×1.06 per level (white max = 25)
+        val over = OwnedCard(0, CardType.WOLF, Rarity.COMMON, level = 40)
+        assertEquals(Math.round(500 * 1.08.pow(25) * 1.06.pow(15)), over.sacrificeValue)
+        assertTrue(over.sacrificeValue > OwnedCard(0, CardType.WOLF, Rarity.COMMON, level = 25).sacrificeValue)
+        assertTrue(over.sellPrice > OwnedCard(0, CardType.WOLF, Rarity.COMMON, level = 25).sellPrice)
     }
 
     @Test
@@ -745,6 +760,40 @@ class RulesTest {
         Battle(listOf(f(Side.PLAYER, 0, atk = 40, skill = Skill.FIREBALL, power = 100)), listOf({ listOf(wyrm, helper) })).also { events(it, 2) }
         assertEquals(996, wyrm.hp)
         assertEquals(960, helper.hp)
+    }
+
+    @Test
+    fun `a cut hit says which trait cut it and the swarm loses its cover with its last helper`() {
+        val wyrm = boss(CardType.DESERT_WYRM, slot = 4)
+        val helper = f(Side.ENEMY, 0, hp = 30)
+        val b = Battle(listOf(f(Side.PLAYER, 0, hp = 1000, atk = 40, skill = Skill.FIREBALL, power = 100)), listOf({ listOf(wyrm, helper) }))
+        val ev = events(b, 2)
+        assertEquals(BossTrait.SWARM, ev.filterIsInstance<BattleEvent.Damage>().first { it.target == wyrm.uid }.shieldedBy)
+        assertNull(ev.filterIsInstance<BattleEvent.Damage>().first { it.target == helper.uid }.shieldedBy)
+        assertTrue(ev.any { it is BattleEvent.TraitBroken && it.uid == wyrm.uid })
+        assertFalse(wyrm.traitActive)
+    }
+
+    @Test
+    fun `a counter skill that doesn't reach the boss is reported`() {
+        // the sneak attack hits the helper standing in front of the regenerating boss
+        val lev = boss(CardType.LEVIATHAN, slot = 3)
+        val helper = f(Side.ENEMY, 0, hp = 1000)
+        val p = f(Side.PLAYER, 0, hp = 1000, skill = Skill.SNEAK_ATTACK, power = 100)
+        val ev = Battle(listOf(p), listOf({ listOf(lev, helper) })).let { events(it, 2) }
+        assertTrue(ev.any { it is BattleEvent.CounterMissed && it.uid == p.uid && it.boss == lev.uid })
+        assertTrue(lev.traitActive)
+    }
+
+    @Test
+    fun `heal against a firestorm breaks its trait`() {
+        val dragon = boss(CardType.LAVA_DRAGON, slot = 5)
+        val hurt = f(Side.PLAYER, 0, hp = 100).also { it.hp = 50 }
+        val priest = f(Side.PLAYER, 1, hp = 100, skill = Skill.HEAL, power = 50)
+        val b = Battle(listOf(priest, hurt), listOf({ listOf(dragon) }))
+        val ev = events(b, 4)
+        assertTrue(b.fireproof)
+        assertTrue(ev.any { it is BattleEvent.TraitBroken && it.uid == dragon.uid })
     }
 
     @Test

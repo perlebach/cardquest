@@ -10,7 +10,7 @@ import cz.erlebach.cardrpg.model.Rarity
  * (evolution material) by buying it in the shop (selling every dropped card) or by buying green heroes and
  * raising/evolving them with the dropped cards (selling only as many drops as the gold needs).
  * Replays only (no first-clear bonus), no same-skill bonus, no cakes. `./gradlew economy`
- * Env ECON_EFF=0.8,0.65,0.5 (feeding efficiency to compare), ECON_SELL=10,20 (sell factors), ECON_STAGES=1,10,16,19.
+ * Env ECON_EFF=1.0,0.8 (multipliers of the feed XP to compare), ECON_SELL=1 (multipliers of the sell price), ECON_STAGES=1,10,16,19.
  */
 
 private data class Cost(val gold: Double, val xp: Double) {
@@ -35,13 +35,12 @@ private fun perRun(st: StageDef, eff: Double, sellFactor: Double): Triple<Double
     for (m in st.waves.flatten()) {
         if (m.type.boss) {
             gold += m.gold
-            xp += Balance.FOOD_DROP_CHANCE * Balance.FOOD_XP_FACTOR * Balance.sacrificeBonus(m.rarity, m.evo)
-            sell += Balance.FOOD_DROP_CHANCE * Balance.sellPrice(m.rarity, m.evo, 1) * sellFactor / Balance.SELL_FACTOR
+            xp += Balance.FOOD_DROP_CHANCE * Balance.foodXp(m.rarity, m.evo) // cakes can't be sold
         } else {
             gold += m.gold * (1 - m.dropChance)
             val lvl = Balance.lootLevel(m.level, m.rarity, 999)
-            xp += m.dropChance * (eff * Balance.cardXpTotal(lvl.coerceAtMost(m.rarity.maxLevel), false) + Balance.sacrificeBonus(m.rarity, m.evo))
-            sell += m.dropChance * Balance.sellPrice(m.rarity, m.evo, lvl) * sellFactor / Balance.SELL_FACTOR
+            xp += m.dropChance * eff * Balance.sacrificeValue(lvl, m.rarity, m.evo)
+            sell += m.dropChance * Balance.sellPrice(m.rarity, m.evo, lvl) * sellFactor
         }
     }
     return Triple(gold, xp, sell)
@@ -55,34 +54,34 @@ private fun dropChance(r: Rarity, evo: Int) =
 /**
  * Idea 5b2 (`ECON_MIX=1`): every regular monster keeps its strength (effective level) but its rarity is spread over the ladder
  * steps 0..its current step (uniform, or "pyramid" = the lower the step, the more common: weight top−k+1). Levels may go above
- * the rarity's max; a looted card counts as a max-level card for feeding and selling. Per replay: drops, feed XP, skill-up
- * chances (sum of the per-card chances, same skill assumed), gold with the current gold formula.
+ * the rarity's max; a looted card feeds and sells at its real level (slower growth above the max). Per replay: drops, feed XP, skill-up
+ * chances (sum of the per-card chances, same skill assumed), gold (the monster's stage share, paid if it doesn't drop).
  */
 private fun mixReport(stages: List<Int>) {
     data class Agg(var drops: Double = 0.0, var xp: Double = 0.0, var skill: Double = 0.0, var gold: Double = 0.0, var sell: Double = 0.0)
-    fun add(a: Agg, w: Double, r: Rarity, evo: Int, level: Int, tier: Int, slots: Int) {
+    fun add(a: Agg, w: Double, r: Rarity, evo: Int, level: Int, gold: Long) {
         val dc = dropChance(r, evo)
-        val lvl = level.coerceIn(1, r.maxLevel)
+        val lvl = level.coerceAtLeast(1)
         a.drops += w * dc
-        a.xp += w * dc * (Balance.SACRIFICE_EFFICIENCY * Balance.cardXpTotal(lvl, false) + Balance.sacrificeBonus(r, evo))
+        a.xp += w * dc * Balance.sacrificeValue(lvl, r, evo)
         a.skill += w * dc * Balance.SKILL_UP_CHANCE[r.ordinal]
         a.sell += w * dc * Balance.sellPrice(r, evo, lvl)
-        a.gold += w * (1 - dc) * Balance.cardGold(level.coerceAtLeast(1), r, evo) * (slots + 1) / 2.0 * Balance.goldSlowdown(tier.toDouble())
+        a.gold += w * (1 - dc) * gold
     }
-    println("5b2: per replay  drops / feed XP / skill-up % (sum) / gold (current formula) / sell value of drops")
+    println("5b2: per replay  drops / feed XP / skill-up % (sum) / gold / sell value of drops")
     println("        now                                   | uniform below the top                  | pyramid (low rarities most common)")
     for (d in Dungeons.all) for (st in d.stages.filter { it.stage in stages }) {
         val now = Agg(); val uni = Agg(); val pyr = Agg()
         for (m in st.waves.flatten().filter { !it.type.boss }) {
-            add(now, 1.0, m.rarity, m.evo, m.level, m.tier, 1)
+            add(now, 1.0, m.rarity, m.evo, m.level, m.gold)
             val eff = Balance.effectiveLevel(m.level, m.rarity, m.evo)
             val top = Balance.ladderStep(m.rarity, m.evo)
             val wsum = (0..top).sumOf { top - it + 1.0 }
             for (k in 0..top) {
                 val (r, e) = LADDER[k]
                 val level = (eff - Balance.effectiveLevel(0, r, e)).toInt()
-                add(uni, 1.0 / (top + 1), r, e, level, m.tier, 1)
-                add(pyr, (top - k + 1) / wsum, r, e, level, m.tier, 1)
+                add(uni, 1.0 / (top + 1), r, e, level, m.gold)
+                add(pyr, (top - k + 1) / wsum, r, e, level, m.gold)
             }
         }
         fun f(a: Agg) = "%4.1f %7.0f %4.0f%% %7.0f %6.0f".format(a.drops, a.xp, 100 * a.skill, a.gold, a.sell)
@@ -92,8 +91,8 @@ private fun mixReport(stages: List<Int>) {
 
 fun main() {
     if (System.getenv("ECON_MIX") != null) return mixReport((System.getenv("ECON_STAGES") ?: "1,10,16,19").split(",").map { it.toInt() })
-    val effs = (System.getenv("ECON_EFF") ?: "0.8,0.65,0.5").split(",").map { it.toDouble() }
-    val sells = (System.getenv("ECON_SELL") ?: "10,20").split(",").map { it.toDouble() }
+    val effs = (System.getenv("ECON_EFF") ?: "1.0,0.8").split(",").map { it.toDouble() }
+    val sells = (System.getenv("ECON_SELL") ?: "1").split(",").map { it.toDouble() }
     val stages = (System.getenv("ECON_STAGES") ?: "1,10,16,19").split(",").map { it.toInt() }
     for (r in listOf(Rarity.RARE, Rarity.EPIC, Rarity.LEGENDARY)) {
         val c = copyCost(r)
@@ -101,7 +100,7 @@ fun main() {
     }
     println()
     println("Replays needed for ONE more hero copy: shop (sell all drops) / green path (feed drops, sell just enough for the gold)")
-    println("columns: " + sells.flatMap { sf -> effs.map { e -> "sell×${sf.toInt()} eff $e" } }.joinToString(" | "))
+    println("columns: " + sells.flatMap { sf -> effs.map { e -> "sell×$sf eff $e" } }.joinToString(" | "))
     for (d in Dungeons.all) for (st in d.stages.filter { it.stage in stages }) {
         val cells = mutableListOf<String>()
         for (sf in sells) for (e in effs) {

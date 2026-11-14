@@ -299,7 +299,7 @@ class Bot(
                 val (t, kept, value) = pick
                 if (pick !== learner && kept < 0.5 * value) {
                     if (freeSlots > HOLD_SLACK) continue // keep it for a card with more room
-                    if (kept < 0.1 * value) { s = Rules.sell(s, listOf(f.id)); changed = true; break }
+                    if (kept < 0.1 * value && !f.type.food) { s = Rules.sell(s, listOf(f.id)); changed = true; break }
                 }
                 s = Rules.feed(s, t.id, listOf(f.id), random)
                 xpFeed += kept; xpWasted += value - kept
@@ -332,7 +332,7 @@ class Bot(
             val affordable = Rarity.entries.filter { Balance.foodPrice(it) <= s.gold - keepGold }
             if (affordable.isEmpty()) return
             val need = xpToCap(target)
-            val r = affordable.lastOrNull { Balance.sacrificeBonus(it, 0) * Balance.FOOD_XP_FACTOR <= need } ?: affordable.first()
+            val r = affordable.lastOrNull { Balance.foodXp(it) <= need } ?: affordable.first()
             val before = s.cards.map { it.id }.toSet()
             s = Rules.buyFood(s, r)
             cakeGold += Balance.foodPrice(r)
@@ -354,7 +354,7 @@ class Bot(
     fun makeRoom() {
         while (s.inventoryFull) {
             if (s.gold >= s.inventoryUpgradeCost + feeReserve()) { s = Rules.upgradeInventory(s); continue }
-            val spare = s.cards.filter { !s.inParty(it.id) && !it.type.hero }.minByOrNull { it.sacrificeValue }
+            val spare = s.cards.filter { !s.inParty(it.id) && !it.type.hero && !it.type.food }.minByOrNull { it.sacrificeValue }
             if (spare != null) s = Rules.sell(s, listOf(spare.id))
             else if (s.gold >= s.inventoryUpgradeCost + minFee()) s = Rules.upgradeInventory(s)
             else return

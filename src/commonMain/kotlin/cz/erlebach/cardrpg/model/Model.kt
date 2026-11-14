@@ -78,7 +78,7 @@ enum class Skill(val title: String, val icon: String, val powerByRarity: List<In
  */
 enum class BossTrait(val icon: String, val title: String, val description: String, val counter: Skill) {
     FIRESTORM("🌋", "Firestorm", "Casts its Fireball every other turn and burns hard. A Heal puts out the fire and makes your team fire-proof.", Skill.HEAL),
-    COMMANDER("📯", "Commander", "Fills the front row and takes only a quarter of the damage while its two helpers live. The helpers behind it are shielded from Fireball and Whirlwind.", Skill.AIMED_SHOT),
+    COMMANDER("📯", "Commander", "Fills the front row and takes only a quarter of the damage until both its helpers are beaten. The helpers behind it are shielded from Fireball and Whirlwind.", Skill.AIMED_SHOT),
     CRUSHER("🔨", "Crusher", "Hits for triple damage. Stone armor (almost no damage) until it smashes into a raised shield – then it cracks.", Skill.SHIELD_UP),
     REGENERATION("♻️", "Regeneration", "Heals a quarter of its HP every turn – until a Sneak Attack wounds it deeply.", Skill.SNEAK_ATTACK),
     UNDYING("⚰️", "Undying", "Gets back up with full HP three times – unless Soul Leech drains its spare lives.", Skill.SOUL_LEECH),
@@ -107,7 +107,7 @@ enum class CardType(
     val art: String? = null,
     /**
      * Food card: always level 1, no skill, can't evolve or fight. Feeding it gives [Balance.FOOD_XP_FACTOR]× the XP
-     * a normal card of the same rarity would give. Bosses drop it, the shop sells it.
+     * a max-level card of the same rarity and evo stage would give ([Balance.foodXp]). Bosses drop it, the shop sells it; it can't be sold.
      */
     val food: Boolean = false,
     /** Special boss mechanic (bosses from Fire Mountain on); one skill is the best answer to it. */
@@ -302,7 +302,6 @@ object Balance {
     const val CARD_XP_GROWTH = 1.15
     const val PLAYER_XP_GROWTH = 1.35
     const val HERO_XP_FACTOR = 2.0
-    const val SACRIFICE_EFFICIENCY = 0.8
     const val MAX_ROUNDS_PER_WAVE = 60
 
     fun effectiveLevel(level: Int, rarity: Rarity, evo: Int): Double =
@@ -337,40 +336,38 @@ object Balance {
     fun playerXpToNext(level: Int): Long = (100 * PLAYER_XP_GROWTH.pow(level - 1)).roundToLong()
 
     /**
-     * XP for eating a card of [level], [rarity] and [evo]: [SACRIFICE_EFFICIENCY] × the XP of its level (a monster card's XP curve
-     * for every card; a level above the rarity's max counts as the max) + [sacrificeBonus]. Food cards give [FOOD_XP_FACTOR]× this.
+     * XP for eating a card of [level], [rarity] and [evo]: [SACRIFICE_XP_BASE] × [SACRIFICE_XP_GROWTH]^[effectiveLevel] up to the
+     * rarity's max level; every level above it (a looted white level 45) adds only ×[SACRIFICE_XP_GROWTH_OVER_MAX].
+     * No legendary hero bonus. Food cards: see [foodXp].
      */
-    fun sacrificeValue(level: Int, rarity: Rarity, evo: Int): Long =
-        (SACRIFICE_EFFICIENCY * cardXpTotal(level.coerceAtMost(rarity.maxLevel), false)).roundToLong() + sacrificeBonus(rarity, evo)
-
-    /** Flat XP bonus for sacrificing a card: the XP of the first `5 + 5×rarity + 2×evo` levels. */
-    fun sacrificeBonus(rarity: Rarity, evo: Int): Long {
-        val bonusLevel = 5 + 5 * rarity.ordinal + 2 * evo
-        return cardXpTotal(bonusLevel, false)
+    fun sacrificeValue(level: Int, rarity: Rarity, evo: Int): Long {
+        val capped = level.coerceAtMost(rarity.maxLevel)
+        return (SACRIFICE_XP_BASE * SACRIFICE_XP_GROWTH.pow(effectiveLevel(capped, rarity, evo)) *
+            SACRIFICE_XP_GROWTH_OVER_MAX.pow(level - capped)).roundToLong()
     }
+    const val SACRIFICE_XP_BASE = 500.0
+    const val SACRIFICE_XP_GROWTH = 1.08
+    const val SACRIFICE_XP_GROWTH_OVER_MAX = 1.06
+
+    /**
+     * XP per gold of everything that turns into XP: selling a card pays its [sacrificeValue] / this, a cake in the shop costs
+     * its XP / this. 9.98 = the old white cake (4990 XP for 500 gold).
+     */
+    const val XP_PER_GOLD = 9.98
 
     // ---------------------------------------------------------------- food cards
 
-    /** Feeding a food card gives this many times the XP a normal card of the same rarity/evo would give. */
-    const val FOOD_XP_FACTOR = 10.0
+    /** Feeding a food card gives this many times the XP a max-level card of the same rarity/evo would give. */
+    const val FOOD_XP_FACTOR = 1.5
     /** Feeding a card with the same skill as the eater gives this much extra XP (0.2 = +20 %). */
     const val SAME_SKILL_XP_BONUS = 0.2
     /** Chance that a beaten boss drops a food card of its own rarity and evo stage (it still pays its gold). */
     const val FOOD_DROP_CHANCE = 0.2
-    /** Shop price of a white (common) food card; the other rarities cost the same per XP (see [foodPrice]). */
-    const val FOOD_PRICE_COMMON = 500L
+    /** XP of a food card of [rarity] and [evo] (always level 1). */
+    fun foodXp(rarity: Rarity, evo: Int = 0): Long = (sacrificeValue(rarity.maxLevel, rarity, evo) * FOOD_XP_FACTOR).roundToLong()
 
-    /**
-     * Shop price of a food card (no evo): [FOOD_PRICE_COMMON] × (its XP / white food XP), rounded down to
-     * 2 significant digits, so rarer food gives the same or slightly more XP per gold.
-     * With CARD_XP_GROWTH 1.15: 500, 1600, 4000, 8800, 18000.
-     */
-    fun foodPrice(rarity: Rarity): Long {
-        val exact = FOOD_PRICE_COMMON * sacrificeBonus(rarity, 0).toDouble() / sacrificeBonus(Rarity.COMMON, 0)
-        if (rarity == Rarity.COMMON) return FOOD_PRICE_COMMON
-        val unit = 10.0.pow(kotlin.math.floor(kotlin.math.log10(exact)) - 1)
-        return (kotlin.math.floor(exact / unit) * unit).roundToLong()
-    }
+    /** Shop price of a food card (no evo): its XP / [XP_PER_GOLD], the same XP per gold as selling cards. */
+    fun foodPrice(rarity: Rarity): Long = (foodXp(rarity) / XP_PER_GOLD).roundToLong()
 
     /**
      * Position of a rarity + evolution stage on the ladder white, green, green+, blue, blue+, blue++, purple, purple+, …,
@@ -416,36 +413,22 @@ object Balance {
         if (rarity == HERO_BUY_RARITY) heroPrice(bought) else HERO_PRICE_BY_RARITY[rarity] ?: error("${rarity.label} heroes aren't sold")
 
     /**
-     * Gold for beating a monster card in a dungeon: `1 + stepValue × 1.1^(effectiveLevel − 1)`.
-     * The 1.1^level part follows the card's strength (stats grow ×1.1 per effective level, so five monsters pay
-     * about as much as one that is as dangerous as all five); [stepValue] doubles per rarity/evolution step
-     * (×2.6 from purple+ on, where the monsters' levels grow slowly), which keeps a stage at about 3× its entry fee.
-     * The flat +1 matters only in the first stages. Bosses pay (spots + 1) / 2 times this.
+     * Gold for beating the monsters of a stage: all of them together pay [STAGE_GOLD_FEES]× the entry fee, split evenly
+     * (a monster that drops its card pays nothing); a boss pays one more entry fee on top (and always pays, see [StageDef]).
      */
-    fun cardGold(level: Int, rarity: Rarity, evo: Int): Long =
-        1 + (stepValue(ladderStep(rarity, evo)) * STAT_GROWTH.pow(effectiveLevel(level, rarity, evo) - 1)).roundToLong()
-
-    fun stepValue(step: Int): Double = 2.0.pow(step) * 1.3.pow(maxOf(0, step - 6))
-
-    /**
-     * [cardGold] grows ×4 per 10 tiers (like the old entry fees). Gold actually paid is slowed down to ×2 per 10 tiers
-     * (like the entry fees now): stage gold is multiplied by `0.5^(tier/10)`, selling by `0.5^ladderStep`
-     * (a rarity step shows up about every 10 tiers).
-     */
-    fun goldSlowdown(tier: Double): Double = 0.5.pow(tier / 10.0)
+    const val STAGE_GOLD_FEES = 3.0
 
     /**
      * Level of a looted card: [LOOT_LEVEL_SHARE] of the monster's level (rounded down), at least 1 and not above the player's level.
      * It may be above the rarity's max level (mixed-in monsters, see MIXED_RARITIES in content/Dungeons.kt): such a card keeps its
-     * level and stats, can't level up, feeds and sells as a max-level card and can evolve (back to level 1) like one.
+     * level and stats, can't level up, feeds and sells at its real level (above the max growing slower, see [sacrificeValue]) and can evolve (back to level 1) like one.
      */
     fun lootLevel(monsterLevel: Int, rarity: Rarity, playerLevel: Int): Int =
         (monsterLevel * LOOT_LEVEL_SHARE).toInt().coerceAtMost(playerLevel).coerceAtLeast(1)
 
-    /** Selling a card pays [SELL_FACTOR] × the gold for beating it (a level above the rarity's max counts as the max). */
+    /** Selling a card pays its [sacrificeValue] / [XP_PER_GOLD] (levels above the rarity's max count, but less, see [sacrificeValue]). */
     fun sellPrice(rarity: Rarity, evo: Int, level: Int): Long =
-        (SELL_FACTOR * cardGold(level.coerceAtMost(rarity.maxLevel), rarity, evo) * goldSlowdown(10.0 * ladderStep(rarity, evo))).roundToLong().coerceAtLeast(1)
-    const val SELL_FACTOR = 20L // was 10 (the gold for beating the monster stays the same)
+        (sacrificeValue(level, rarity, evo) / XP_PER_GOLD).roundToLong().coerceAtLeast(1)
     /** A dropped card joins at this share of the monster's level. */
     const val LOOT_LEVEL_SHARE = 1.0
 
@@ -522,13 +505,18 @@ data class OwnedCard(
     val skillLevel: Int = 1,
     /** How many times meditation clues shortened the skill cooldown (0..[Balance.MAX_COOLDOWN_CUTS]); shown as lotus flowers. */
     val cooldownCuts: Int = 0,
+    /** Level of the hero's passive ability (0 = none yet), bought with diamonds in the Contest tab. */
+    val passiveLevel: Int = 0,
 ) {
+    /** The hero's passive ability, if it has bought one. */
+    val passive: Passive? get() = if (passiveLevel > 0) Passive.of(type) else null
     /** Rounds to wait after using the skill. */
     val skillCooldown get() = Balance.SKILL_COOLDOWN - cooldownCuts
     /** Rank among cards of the same type: rarity, then evolution stage, then level (the best one meditates). */
     val rank get() = (rarity.ordinal * 10 + evo) * 100 + level
-    val hp get() = Balance.hp(type, level, rarity, evo)
-    val atk get() = Balance.atk(type, level, rarity, evo)
+    /** HP and attack, including the passive's bonus ([Passive.BLESSING], [Passive.ARCANE_POWER]). */
+    val hp get() = (Balance.hp(type, level, rarity, evo) * (1 + (passive?.hpBonus(passiveLevel) ?: 0.0))).roundToInt()
+    val atk get() = (Balance.atk(type, level, rarity, evo) * (1 + (passive?.atkBonus(passiveLevel) ?: 0.0))).roundToInt()
     val hasSkill get() = rarity != Rarity.COMMON && !type.food
     val skillPower get() = type.skill.power(rarity, skillLevel)
     val xpToNext get() = Balance.cardXpToNext(level, type.hero)
@@ -541,8 +529,9 @@ data class OwnedCard(
     val totalXp: Long get() = Balance.cardXpTotal(level, type.hero) + xp
     /** XP for eating this card: depends only on its level, rarity and evo stage ([Balance.sacrificeValue]), not on how it got there. */
     val sacrificeValue: Long get() =
-        Balance.sacrificeValue(level, rarity, evo).let { if (type.food) (it * Balance.FOOD_XP_FACTOR).roundToLong() else it }
-    val sellPrice get() = Balance.sellPrice(rarity, evo, level)
+        if (type.food) Balance.foodXp(rarity, evo) else Balance.sacrificeValue(level, rarity, evo)
+    /** Gold for selling it (0 for food cards, which can't be sold). */
+    val sellPrice: Long get() = if (type.food) 0 else Balance.sellPrice(rarity, evo, level)
     val stageLabel get() = "${rarity.label}${"+".repeat(evo)}"
     val fullName get() = "$stageLabel ${type.title}"
 }

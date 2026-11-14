@@ -30,8 +30,11 @@ fun DevScreen(model: AppModel) {
             Button({
                 model.update { s -> s.copy(cards = s.cards.map { if (s.inParty(it.id)) Rules.addCardXp(s, it, 1_000_000_000) else it }) }
             }) { Text("Max level party (up to player level)") }
-            Button({ model.update { s -> s.copy(lastClueDay = s.lastClueDay?.minus(1)) } }) { Text("🪷 Skip a night (meditation)") }
+            // a new day: meditation clues and contest tickets
+            Button({ model.update { s -> s.copy(lastClueDay = s.lastClueDay?.minus(1), lastTicketDay = s.lastTicketDay?.minus(1)) } }) { Text("🌙 Skip a night (clues + contest ticket)") }
             Button({ model.update { s -> s.copy(clues = CardType.heroes.associateWith { s.clues(it) + 100 }) } }) { Text("🪷 +100 clues each") }
+            Button({ model.update { s -> s.copy(contestTickets = s.contestTickets + 3) } }) { Text("🎟️ +3 contest tickets") }
+            Button({ model.update { s -> s.copy(diamonds = s.diamonds + 1000) } }) { Text("💎 +1000 diamonds") }
         }
         Text("Give a level 1 card:", color = Palette.text)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

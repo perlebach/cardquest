@@ -10,7 +10,7 @@ plugins {
 
 group = "cz.erlebach"
 // The game version: shown on the start screen (generated GameVersion.kt) and used for the msi. Raise it for each release.
-version = "1.0.1"
+version = "1.0.2"
 
 val generateVersion by tasks.registering {
   val version = project.version.toString()
@@ -176,6 +176,14 @@ tasks.register<JavaExec>("economy") {
   classpath = desktopTestClasspath
   dependsOn("desktopTestClasses")
   mainClass.set("cz.erlebach.cardrpg.EconomyReportKt")
+  javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}
+
+tasks.register<JavaExec>("contest") {
+  description = "Contest tuning: monsters and emeralds per wave, how far the saved games get (dev helper)"
+  classpath = desktopTestClasspath
+  dependsOn("desktopTestClasses")
+  mainClass.set("cz.erlebach.cardrpg.ContestReportKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
 }
 

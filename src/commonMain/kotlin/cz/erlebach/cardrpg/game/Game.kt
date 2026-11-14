@@ -6,6 +6,7 @@ import cz.erlebach.cardrpg.battle.Battle
 import cz.erlebach.cardrpg.battle.Fighter
 import cz.erlebach.cardrpg.battle.Side
 import cz.erlebach.cardrpg.battle.SkillMode
+import cz.erlebach.cardrpg.content.Contest
 import cz.erlebach.cardrpg.content.DungeonDef
 import cz.erlebach.cardrpg.content.Dungeons
 import cz.erlebach.cardrpg.content.Milestone
@@ -14,6 +15,7 @@ import cz.erlebach.cardrpg.content.StageDef
 import cz.erlebach.cardrpg.model.Balance
 import cz.erlebach.cardrpg.model.CardType
 import cz.erlebach.cardrpg.model.OwnedCard
+import cz.erlebach.cardrpg.model.Passive
 import cz.erlebach.cardrpg.model.Rarity
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToInt
@@ -55,6 +57,16 @@ data class GameState(
     val meditationUnlocked: Boolean = false,
     /** Local day (epoch day) up to which the meditation clues were collected; null = never. */
     val lastClueDay: Long? = null,
+    /** The Contest tab is open (once the player reached [Contest.UNLOCK_LEVEL]; it stays open). */
+    val contestUnlocked: Boolean = false,
+    /** Contest entry tickets. */
+    val contestTickets: Int = 0,
+    /** Local day (epoch day) up to which the daily contest tickets were given; null = never. */
+    val lastTicketDay: Long? = null,
+    /** Contest currency: buys passive abilities for hero cards (and gold / food as a fallback). */
+    val diamonds: Long = 0,
+    /** Most waves beaten in one contest. */
+    val contestBestWaves: Int = 0,
 ) {
     fun card(id: Long?) = cards.firstOrNull { it.id == id }
     val partyCards get() = party.mapNotNull { card(it) }
@@ -102,6 +114,9 @@ data class GameState(
     /** All stars of the dungeon collected. */
     fun dungeonComplete(d: DungeonDef) = dungeonStars(d) >= d.maxStars
 }
+
+/** Results of a contest (it always ends with the party beaten or running away). */
+data class ContestResult(val waves: Int, val diamonds: Long, val newBest: Boolean)
 
 /** Results of a won fight, for the summary screen. */
 data class FightRewards(
@@ -211,22 +226,33 @@ object Rules {
     fun fighterFor(c: OwnedCard, slot: Int) = Fighter(
         uidCounter.incrementAndFetch(), Side.PLAYER, c.type, c.rarity, c.evo, c.level, c.hp, c.atk,
         if (c.hasSkill) c.type.skill else null, c.skillPower, listOf(slot), cardId = c.id, skillLevel = c.skillLevel,
-        skillCooldown = c.skillCooldown,
+        skillCooldown = c.skillCooldown, passiveLevel = if (c.type.hero) c.passiveLevel else 0,
     )
 
-    /** Regular monsters fight with skill level 1, bosses always with the max skill level (including its bonus). */
-    fun monsterFighter(m: MonsterSpec) = Fighter(
-        uidCounter.incrementAndFetch(), Side.ENEMY, m.type, m.rarity, m.evo, m.level,
-        maxOf(1, (Balance.hp(m.type, m.level, m.rarity, m.evo, m.slots.size) * m.hpFactor).roundToInt()),
-        maxOf(1, (Balance.atk(m.type, m.level, m.rarity, m.evo) * m.atkFactor).roundToInt()),
-        if (m.rarity != Rarity.COMMON) m.type.skill else null,
-        m.type.skill.power(m.rarity, m.skillLevel), m.slots, dropChance = m.dropChance, gold = m.gold, skillLevel = m.skillLevel,
-    )
+    /**
+     * Regular monsters fight with skill level 1, bosses always with the max skill level (including its bonus).
+     * [contest] = a contest monster: no gold, diamonds by its strength instead.
+     */
+    fun monsterFighter(m: MonsterSpec, contest: Boolean = false): Fighter {
+        val hp = maxOf(1, (Balance.hp(m.type, m.level, m.rarity, m.evo, m.slots.size) * m.hpFactor).roundToInt())
+        val atk = maxOf(1, (Balance.atk(m.type, m.level, m.rarity, m.evo) * m.atkFactor).roundToInt())
+        return Fighter(
+            uidCounter.incrementAndFetch(), Side.ENEMY, m.type, m.rarity, m.evo, m.level, hp, atk,
+            if (m.rarity != Rarity.COMMON) m.type.skill else null,
+            m.type.skill.power(m.rarity, m.skillLevel), m.slots, dropChance = m.dropChance,
+            gold = if (contest) 0 else m.gold, skillLevel = m.skillLevel,
+            diamonds = if (contest) Contest.diamonds(hp, atk) else 0,
+        )
+    }
+
+    private fun checkParty(s: GameState) {
+        if (s.partyCards.isEmpty()) throw GameException("Put at least one card into your party first.")
+        s.partyCards.firstOrNull { heroTwin(s, it) != null }?.let { throw GameException("There can be only one ${it.type.title} in the party.") }
+    }
 
     fun startFight(s: GameState, stage: StageDef, random: Random = Random.Default): Pair<GameState, Battle> {
         if (!s.isUnlocked(stage)) throw GameException("This stage is still locked.")
-        if (s.partyCards.isEmpty()) throw GameException("Put at least one card into your party first.")
-        s.partyCards.firstOrNull { heroTwin(s, it) != null }?.let { throw GameException("There can be only one ${it.type.title} in the party.") }
+        checkParty(s)
         if (s.gold < stage.entryFee) throw GameException("You need ${stage.entryFee} gold to enter.")
         checkInventorySpace(s)
         val fighters = s.party.mapIndexedNotNull { slot, id -> s.card(id)?.let { fighterFor(it, slot) } }
@@ -295,6 +321,76 @@ object Rules {
         else Balance.lootLevel(f.level, f.rarity, playerLevel).let { level ->
             OwnedCard(0, f.type, f.rarity, f.evo, level = level)
         }
+
+    // ---------------------------------------------------------------- contest
+
+    /**
+     * Brings the contest up to [today] (local epoch day): opens it at player level [Contest.UNLOCK_LEVEL] with
+     * [Contest.START_TICKETS] tickets, then adds [Contest.TICKETS_PER_DAY] for every midnight passed since [GameState.lastTicketDay].
+     * Returns the new state and the number of tickets added (the start tickets don't count).
+     */
+    fun collectTickets(s: GameState, today: Long): Pair<GameState, Int> {
+        if (!s.contestUnlocked) {
+            if (s.playerLevel < Contest.UNLOCK_LEVEL) return s to 0
+            return s.copy(contestUnlocked = true, contestTickets = s.contestTickets + Contest.START_TICKETS, lastTicketDay = today) to 0
+        }
+        val last = s.lastTicketDay ?: return s.copy(lastTicketDay = today) to 0
+        val days = today - last
+        if (days <= 0) return s to 0
+        val added = (days * Contest.TICKETS_PER_DAY).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return s.copy(contestTickets = s.contestTickets + added, lastTicketDay = today) to added
+    }
+
+    /** Uses a ticket and starts an endless contest fight (new random waves until the party falls). */
+    fun startContest(s: GameState, random: Random = Random.Default): Pair<GameState, Battle> {
+        if (!s.contestUnlocked) throw GameException("The Contest opens at player level ${Contest.UNLOCK_LEVEL}.")
+        checkParty(s)
+        if (s.contestTickets <= 0) throw GameException("No entry ticket left – a new one comes every day.")
+        val fighters = s.party.mapIndexedNotNull { slot, id -> s.card(id)?.let { fighterFor(it, slot) } }
+        val battle = Battle(fighters, { w -> Contest.wave(w, random).map { monsterFighter(it, contest = true) } }, null, random)
+        battle.skillMode = s.skillMode
+        return s.copy(contestTickets = s.contestTickets - 1) to battle
+    }
+
+    /** Ends a contest (the party fell or ran away): the diamonds are kept, the best wave count is updated. */
+    fun finishContest(s: GameState, battle: Battle): Pair<GameState, ContestResult> {
+        val waves = battle.wavesCleared
+        val result = ContestResult(waves, battle.diamonds, waves > s.contestBestWaves)
+        return s.copy(diamonds = s.diamonds + battle.diamonds, contestBestWaves = maxOf(s.contestBestWaves, waves)) to result
+    }
+
+    /** Why the passive of [c] can't be raised now (null = it can). */
+    fun passiveProblem(s: GameState, c: OwnedCard): String? {
+        if (!c.type.hero) return "Only hero cards can learn a passive ability."
+        if (c.passiveLevel >= Passive.MAX_LEVEL) return "This passive is at its max level."
+        val cost = Passive.cost(c.passiveLevel)
+        if (s.diamonds < cost) return "You need ${cost} diamonds."
+        return null
+    }
+
+    /** Raises the passive ability of a hero card by one level for [Passive.cost] diamonds. */
+    fun upgradePassive(s: GameState, cardId: Long): GameState {
+        val c = s.card(cardId) ?: throw GameException("Card not found.")
+        passiveProblem(s, c)?.let { throw GameException(it) }
+        return s.copy(
+            diamonds = s.diamonds - Passive.cost(c.passiveLevel),
+            cards = s.cards.map { if (it.id == cardId) it.copy(passiveLevel = it.passiveLevel + 1) else it },
+        )
+    }
+
+    /** Diamond shop: [Contest.GOLD_PACK_GOLD] gold for [Contest.GOLD_PACK_PRICE] diamonds. */
+    fun buyGoldWithDiamonds(s: GameState): GameState {
+        if (s.diamonds < Contest.GOLD_PACK_PRICE) throw GameException("You need ${Contest.GOLD_PACK_PRICE} diamonds.")
+        return s.copy(diamonds = s.diamonds - Contest.GOLD_PACK_PRICE, gold = s.gold + Contest.GOLD_PACK_GOLD)
+    }
+
+    /** Diamond shop: a legendary food card for [Contest.LEGENDARY_CAKE_PRICE] diamonds. */
+    fun buyCakeWithDiamonds(s: GameState): GameState {
+        if (s.diamonds < Contest.LEGENDARY_CAKE_PRICE) throw GameException("You need ${Contest.LEGENDARY_CAKE_PRICE} diamonds.")
+        checkInventorySpace(s)
+        val card = OwnedCard(s.nextId, CardType.FOOD, Rarity.LEGENDARY)
+        return s.copy(diamonds = s.diamonds - Contest.LEGENDARY_CAKE_PRICE, cards = s.cards + card, nextId = s.nextId + 1)
+    }
 
     // ---------------------------------------------------------------- feeding
 
@@ -470,6 +566,7 @@ object Rules {
         val cards = ids.distinct().map { s.card(it) ?: throw GameException("Card not found.") }
         cards.forEach {
             if (it.type.hero) throw GameException("Hero cards can't be sold.")
+            if (it.type.food) throw GameException("Food cards can't be sold.")
             if (s.inParty(it.id)) throw GameException("Remove ${it.type.title} from the party first.")
         }
         val set = cards.map { it.id }.toSet()

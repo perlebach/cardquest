@@ -77,7 +77,7 @@ fun main(args: Array<String>) {
                 for (t in CardType.heroes) CardArt(t, 40.dp)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (t in CardType.heroes) CardFace(OwnedCard(0, t, Rarity.UNCOMMON).look(), width = 66.dp)
+                for (t in CardType.heroes) CardFace(OwnedCard(0, t, Rarity.UNCOMMON, passiveLevel = 2).look(), width = 66.dp)
                 CardFace(OwnedCard(0, CardType.FOX, Rarity.COMMON).look(), width = 120.dp, overlay = { StunnedOverlay() })
             }
         }
@@ -91,6 +91,21 @@ fun main(args: Array<String>) {
         }
     }
     if (System.getenv("ONLY_HEROES") != null) { println("heroes in ${out.absolutePath}"); kotlin.system.exitProcess(0) }
+    // contest: heroes with passive abilities, the tab and a fight in the arena
+    val contestCards = listOf(
+        c(CardType.WARRIOR, Rarity.RARE, 2, 35).copy(passiveLevel = 2), c(CardType.ROGUE, Rarity.RARE, 1, 35).copy(passiveLevel = 1),
+        c(CardType.PALADIN, Rarity.RARE, 2, 35).copy(passiveLevel = 1), c(CardType.BERSERKER, Rarity.RARE, 2, 35),
+        c(CardType.MAGE, Rarity.RARE, 2, 35).copy(passiveLevel = 3), c(CardType.PRIEST, Rarity.UNCOMMON, 0, 30),
+    )
+    val contest = state.copy(
+        playerLevel = 52, cards = state.cards + contestCards, party = listOf(0, 1, 3, 2, 4).map { contestCards[it].id } + null,
+        contestUnlocked = true, contestTickets = 3, lastTicketDay = java.time.LocalDate.now().toEpochDay(), diamonds = 1234, contestBestWaves = 7,
+    )
+    shot("contest", model(contest).also { m -> m.message = null; m.tab = Tab.CONTEST }, h = 1100)
+    val cm = model(contest).also { it.message = null }
+    cm.update { s -> Rules.startContest(s).let { (ns, b) -> cm.fight = ActiveFight(null, b); ns } }
+    shot("contest-battle", cm, times = listOf(2500, 9000))
+    if (System.getenv("ONLY_CONTEST") != null) { println("contest in ${out.absolutePath}"); kotlin.system.exitProcess(0) }
     if (!onlyBattle) shot("saves", model(state).also { it.closeGame() })
     if (!onlyBattle) shot("starter", model(GameState()))
     if (!onlyBattle) shot("cards", model(state).also { it.tab = Tab.CARDS })

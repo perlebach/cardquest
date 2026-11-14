@@ -21,23 +21,30 @@ data class MonsterSpec(
     val slots: List<Int>,
     /** Chance to drop its card (a boss drops a food card instead, see [Balance.FOOD_DROP_CHANCE]). */
     val dropChance: Double,
-    /** Difficulty tier of the stage (slows the gold down, see [Balance.goldSlowdown]). */
+    /** Difficulty tier of the stage. */
     val tier: Int,
     /** Boss helpers ([BossTrait.SWARM], [BossTrait.COMMANDER]) are weaker or more fragile than regular monsters. */
     val hpFactor: Double = 1.0,
     val atkFactor: Double = 1.0,
     /**
-     * Gold base ([Balance.cardGold]) of the monster this one stands in for when [MIXED_RARITIES] gave it a lower rarity: the
-     * gold follows the stage, not the rarity (null = from its own level/rarity/evo).
+     * Gold for beating it (only if it doesn't drop its card; bosses always pay): set by the stage, see [withStageGold].
+     * Doesn't depend on the monster's level or rarity.
      */
-    val goldBase: Long? = null,
+    val gold: Long = 0,
 ) {
     /** Regular monsters have skill level 1 ([LEGENDARY_MONSTER_SKILL_LEVEL] if legendary), bosses the max level (with its special bonus). */
     val skillLevel: Int get() = if (type.boss) Balance.MAX_SKILL_LEVEL else if (rarity == LEGENDARY) LEGENDARY_MONSTER_SKILL_LEVEL else 1
+}
 
-    /** Gold for beating it (only if it doesn't drop its card; bosses always pay). A boss pays (spots + 1) / 2 times as much. */
-    val gold: Long get() =
-        ((goldBase ?: Balance.cardGold(level, rarity, evo)) * (slots.size + 1) / 2.0 * hpFactor * atkFactor * Balance.goldSlowdown(tier.toDouble())).roundToLong().coerceAtLeast(1)
+/**
+ * Splits the stage gold among its monsters: together they pay [Balance.STAGE_GOLD_FEES]× [entryFee] (equal shares),
+ * a boss gets one more [entryFee] on top of its share.
+ */
+private fun withStageGold(waves: List<List<MonsterSpec>>, entryFee: Long): List<List<MonsterSpec>> {
+    val share = Balance.STAGE_GOLD_FEES * entryFee / waves.sumOf { it.size }
+    return waves.map { w ->
+        w.map { m -> m.copy(gold = (share + if (m.type.boss) entryFee else 0).roundToLong().coerceAtLeast(1)) }
+    }
 }
 
 /** Skill level of regular legendary monsters (dungeons 9-10). */
@@ -102,7 +109,7 @@ private const val MIX_LEVELS_PER_RARITY = 0.5
 private const val MIX_NO_SKILL_LEVELS = 2.0
 
 /** white, green, green+, blue, blue+, blue++, purple, …, purple+++, legendary, … */
-private val LADDER = Rarity.entries.flatMap { r -> (0..r.maxEvo).map { r to it } }
+internal val LADDER = Rarity.entries.flatMap { r -> (0..r.maxEvo).map { r to it } }
 
 private const val A1 = 0
 private const val A2 = 1
@@ -121,14 +128,14 @@ private val THREAT = listOf(
     0 to 4.0, 9 to 22.7, 19 to 33.7, 29 to 42.7, 39 to 50.7, 49 to 57.7, 59 to 63.7, 69 to 66.7, 79 to 69.7, 89 to 72.7, 99 to 85.0, 109 to 93.0,
 )
 
-private fun threat(tier: Int): Double {
+internal fun threat(tier: Int): Double {
     val i = THREAT.indexOfLast { it.first <= tier }.coerceIn(0, THREAT.size - 2)
     val (t0, v0) = THREAT[i]
     val (t1, v1) = THREAT[i + 1]
     return v0 + (v1 - v0) * (tier - t0).toDouble() / (t1 - t0)
 }
 
-private fun levels(n: Double) = ln(n) / ln(1.1)
+internal fun levels(n: Double) = ln(n) / ln(1.1)
 
 /** Average monsters per wave: 1.33 in stage 1 (1, 1, 2) up to 5 in stage 20 – the same in every dungeon. */
 private fun perWave(s: Int) = 1.33 + 0.19 * (s - 1)
@@ -224,11 +231,9 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
         while (levelAt(step) > LADDER[step].first.maxLevel && step + 1 < LADDER.size && LADDER[step + 1].first == LADDER[step].first) step++
         var (rarity, evo) = LADDER[step]
         var level = levelAt(step).coerceAtLeast(1)
-        var goldBase: Long? = null
         if (MIXED_RARITIES && step > 0) {
             val k = rnd.nextInt(0, step + 1)
             if (k < step) {
-                goldBase = Balance.cardGold(level, rarity, evo)
                 val (r, ev) = LADDER[k]
                 val extra = MIX_LEVELS_PER_RARITY * (rarity.ordinal - r.ordinal) + if (r == COMMON) MIX_NO_SKILL_LEVELS else 0.0
                 level = (e + extra - Balance.effectiveLevel(0, r, ev)).roundToInt().coerceAtLeast(1)
@@ -237,7 +242,7 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
         }
         // legendary monsters never drop their card
         val drop = when (rarity) { COMMON -> 0.25; UNCOMMON -> 0.2; RARE -> 0.15; EPIC -> 0.1; LEGENDARY -> 0.0 } * 0.75.pow(evo)
-        return MonsterSpec(type, level, rarity, evo, listOf(slot), drop, tier, hpF, atkF, goldBase)
+        return MonsterSpec(type, level, rarity, evo, listOf(slot), drop, tier, hpF, atkF)
     }
 
     fun wave(count: Int, boss: MonsterSpec?): List<MonsterSpec> {
@@ -283,10 +288,10 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
             wave(counts[w], MonsterSpec(type, level, rarity, evo, bossSlots, Balance.FOOD_DROP_CHANCE, tier))
         } else wave(counts[w], null)
     }
-    return StageDef(d, s, waves)
+    return StageDef(d, s, withStageGold(waves, StageDef(d, s, waves).entryFee))
 }
 
-private val CardType.heals get() = skill == Skill.HEAL || skill == Skill.FLASH_HEAL
+internal val CardType.heals get() = skill == Skill.HEAL || skill == Skill.FLASH_HEAL
 
 private fun dungeon(
     id: Int, name: String, emoji: String, bg: Long, scenery: List<String>, inner: List<String>, roster: Roster,

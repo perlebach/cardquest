@@ -172,6 +172,7 @@ private fun MainScreen(model: AppModel) {
                 Tab.PARTY -> PartyScreen(model)
                 Tab.DUNGEONS -> DungeonScreen(model)
                 Tab.MEDITATION -> MeditationScreen(model)
+                Tab.CONTEST -> ContestScreen(model)
                 Tab.DEV -> DevScreen(model)
             }
         }
@@ -198,12 +199,13 @@ private fun TopBar(model: AppModel) {
                 for (t in Tab.entries) {
                     if (t == Tab.DEV && !model.devMode) continue
                     if (t == Tab.MEDITATION && !s.meditationUnlocked) continue
+                    if (t == Tab.CONTEST && !s.contestUnlocked) continue
                     val sel = model.tab == t
                     Box(
                         Modifier.padding(horizontal = 4.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (sel) Palette.feltDark else Color(0x33000000))
                             .border(2.dp, if (sel) Palette.gold else Color.Transparent, RoundedCornerShape(10.dp))
-                            .clickable { model.tab = t }.padding(horizontal = 18.dp, vertical = 8.dp)
+                            .clickable { if (model.tab == t) model.tabReclicks++ else model.tab = t }.padding(horizontal = 18.dp, vertical = 8.dp)
                     ) { Text("${t.icon} ${t.title}", fontSize = 18.sp, color = if (sel) Palette.gold else Palette.text, fontWeight = FontWeight.Bold) }
                 }
             }
@@ -214,6 +216,10 @@ private fun TopBar(model: AppModel) {
                 Text("${fmt(s.playerXp)} / ${fmt(s.playerXpToNext)} XP", color = Palette.textDim, fontSize = 11.sp)
             }
             Spacer(Modifier.width(20.dp))
+            if (s.contestUnlocked) {
+                Text("💎 ${fmt(s.diamonds)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = DIAMOND)
+                Spacer(Modifier.width(14.dp))
+            }
             Text("🪙 ${fmt(s.gold)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Palette.gold)
             Spacer(Modifier.width(12.dp))
             Box {
