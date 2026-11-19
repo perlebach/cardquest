@@ -284,6 +284,26 @@ class RulesTest {
         assertEquals(1, Rules.feed(s, 1, listOf(10), neverLucky).cards[0].skillLevel)
     }
 
+    @Test
+    fun `legendary heroes eat only cards with their skill and cakes`() {
+        val hero = OwnedCard(1, CardType.WARRIOR, Rarity.LEGENDARY, level = 10)
+        val snail = OwnedCard(10, CardType.SNAIL, Rarity.EPIC, level = 20) // Shield Up
+        val whiteSnail = OwnedCard(11, CardType.SNAIL, Rarity.COMMON, level = 20) // no skill
+        val fox = OwnedCard(12, CardType.FOX, Rarity.EPIC, level = 20) // Sneak Attack
+        val cake = OwnedCard(13, CardType.FOOD, Rarity.RARE)
+        val s = Rules.newGame(CardType.WARRIOR).copy(playerLevel = 60, cards = listOf(hero, snail, whiteSnail, fox, cake))
+        assertTrue(Rules.pickyEater(hero))
+        assertEquals(listOf(10L, 13L), s.cards.filter { Rules.canBeFood(s, hero, it) }.map { it.id })
+        assertTrue(Rules.feed(s, 1, listOf(10, 13), neverLucky).card(1)!!.level > 10)
+        assertFailsWith<GameException> { Rules.feed(s, 1, listOf(12)) }
+        assertFailsWith<GameException> { Rules.feed(s, 1, listOf(11)) }
+        // an epic hero (or a legendary monster) eats anything
+        val epic = hero.copy(rarity = Rarity.EPIC, evo = 3)
+        assertFalse(Rules.pickyEater(epic))
+        assertTrue(Rules.canBeFood(s, epic, fox))
+        assertTrue(Rules.canBeFood(s, OwnedCard(20, CardType.ROCKET, Rarity.LEGENDARY), fox))
+    }
+
     private val alwaysLucky = object : Random() { override fun nextBits(bitCount: Int) = 0 }
     private val neverLucky = object : Random() { override fun nextBits(bitCount: Int) = -1 ushr (32 - bitCount) }
 
@@ -430,9 +450,9 @@ class RulesTest {
         assertEquals(10, stage("2-1").entryFee)
         assertEquals(20, stage("2-11").entryFee)
         assertEquals(20, stage("3-1").entryFee)
-        assertEquals(10, Dungeons.all.size)
+        assertEquals(12, Dungeons.all.size)
         assertTrue(Dungeons.all.all { it.stages.size == 20 })
-        assertEquals(listOf(null, "1-10", "2-10", "3-10", "4-10", "5-10", "6-10", "7-10", "8-10", "9-10"), Dungeons.all.map { it.unlockedBy })
+        assertEquals(listOf(null, "1-10", "2-10", "3-10", "4-10", "5-10", "6-10", "7-10", "8-10", "9-10", "10-10", "11-10"), Dungeons.all.map { it.unlockedBy })
     }
 
     @Test
@@ -613,7 +633,12 @@ class RulesTest {
         assertEquals(CardReward(CardType.FOOD, Rarity.UNCOMMON, 0, 5), d2.milestones[1].cards.single())
         assertEquals(CardReward(CardType.SKELETON, Rarity.RARE, 1, level = Rarity.RARE.maxLevel), d2.milestones[2].cards.single())
         // dungeons 8-10: gold instead of a (legendary) monster
-        assertEquals(listOf(1_000_000L, 2_000_000L, 4_000_000L), Dungeons.all.drop(7).map { it.milestones[2].gold })
+        assertEquals(listOf(1_000_000L, 2_000_000L, 4_000_000L, 8_000_000L, 16_000_000L), Dungeons.all.drop(7).map { it.milestones[2].gold })
+        // the end game: 1M / 2M and 10 legendary / legendary+ cakes
+        val (d11, d12) = Dungeons.all.drop(10)
+        assertEquals(listOf(1_000_000L, 2_000_000L), listOf(d11, d12).map { it.milestones[0].gold })
+        assertEquals(CardReward(CardType.FOOD, Rarity.LEGENDARY, 0, 10), d11.milestones[1].cards.single())
+        assertEquals(CardReward(CardType.FOOD, Rarity.LEGENDARY, 1, 10), d12.milestones[1].cards.single())
         assertTrue(Dungeons.all.drop(7).all { it.milestones[2].cards.isEmpty() })
 
         // all stars of the woods except the 3 of stage 1-1; then win 1-1 without skills and losses

@@ -247,7 +247,8 @@ class Bot(
                 val target = party.filter { it.level < Rules.levelCap(s, it) }.maxByOrNull { it.power }
                     ?: s.cards.filter { it.type.hero && !s.inParty(it.id) && it.id !in keep && it.level < Rules.levelCap(s, it) }
                         .maxByOrNull { it.rarity.ordinal * 100 + it.evo * 40 + it.level }
-                if (target != null) {
+                val food = if (target == null) food else food.filter { Rules.acceptsFood(target, it) }
+                if (target != null && food.isNotEmpty()) {
                     val value = food.sumOf { Rules.feedXp(target, it) }
                     val before = lifetime(target.id)
                     s = Rules.feed(s, target.id, food.map { it.id }, random)
@@ -285,8 +286,9 @@ class Bot(
             val mainHeroes = s.cards.filter { it.type.hero }.groupBy { it.type }.values.map { g -> g.maxBy { it.rank }.id }.toSet()
             var changed = false
             for (f in food) {
-                val options = targets.map { t -> Triple(t, keptXp(t, f), Rules.feedXp(t, f)) }
-                if (options.isEmpty()) return
+                // legendary heroes eat only cards with their skill (and cakes)
+                val options = targets.filter { Rules.acceptsFood(it, f) }.map { t -> Triple(t, keptXp(t, f), Rules.feedXp(t, f)) }
+                if (options.isEmpty()) continue
                 // the main card of a hero type (its best one) that can learn its skill from this card gets it even if XP
                 // overflows (the skill is worth more and goes along through every evolution)
                 val learner = options.filter { it.first.id in mainHeroes && Rules.skillUpChance(it.first, listOf(f)) > 0 }

@@ -47,7 +47,7 @@ private fun withStageGold(waves: List<List<MonsterSpec>>, entryFee: Long): List<
     }
 }
 
-/** Skill level of regular legendary monsters (dungeons 9-10). */
+/** Skill level of regular legendary monsters (dungeons 9-12). */
 const val LEGENDARY_MONSTER_SKILL_LEVEL = 4
 
 data class StageDef(
@@ -137,6 +137,18 @@ internal fun threat(tier: Int): Double {
 
 internal fun levels(n: Double) = ln(n) / ln(1.1)
 
+/**
+ * The end game (dungeons 11-12) doesn't follow [THREAT] by tier (11-1 would be as easy as 10-11): each has its own threat
+ * ramp from stage 1 to stage 20. Dungeon 11 starts where maxed epic+++ heroes (effective level 77.5, with 2 cooldown cuts and
+ * passive level 2) win only with the best party and ends above a maxed legendary (80); dungeon 12 ends where maxed
+ * legendary+ heroes (87.5) win with a good party. Tuned with `./gradlew gauntlet`.
+ */
+private val END_GAME_THREAT = mapOf(11 to (98.0 to 102.5), 12 to (99.0 to 103.5))
+
+/** Threat of stage [s] of dungeon [d]: [END_GAME_THREAT] for the end game, [threat] by tier otherwise. */
+internal fun stageThreat(d: Int, s: Int): Double =
+    END_GAME_THREAT[d]?.let { (a, b) -> a + (b - a) * (s - 1) / 19.0 } ?: threat(Dungeons.tier(d, s))
+
 /** Average monsters per wave: 1.33 in stage 1 (1, 1, 2) up to 5 in stage 20 – the same in every dungeon. */
 private fun perWave(s: Int) = 1.33 + 0.19 * (s - 1)
 
@@ -175,7 +187,7 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
     val rnd = Random(d * 1000 + s)
     val tier = Dungeons.tier(d, s)
     // the higher the stage number, the more monsters; the higher the dungeon, the stronger they are
-    val eff = threat(tier) - levels(perWave(s))
+    val eff = stageThreat(d, s) - levels(perWave(s))
     val band = when { s <= 5 -> 0; s <= 15 -> 1; else -> 2 }
     val topStep = d - 1 + band
     val bossStage = s % 5 == 0
@@ -281,7 +293,7 @@ private fun generateStage(d: Int, s: Int, roster: Roster): StageDef {
                 BOSS_SKILL_LEVELS.getValue(type.skill) + (trait?.let { TRAIT_LEVELS.getValue(it) } ?: 0.0)
             fun levelAt(step: Int) = (eff + bossLevels - LADDER[step].let { Balance.effectiveLevel(0, it.first, it.second) }).roundToInt()
             // too high a level for its rarity: one more "+" instead (same strength)
-            if (levelAt(step) > LADDER[step].first.maxLevel && LADDER[step + 1].first == LADDER[step].first) step++
+            if (levelAt(step) > LADDER[step].first.maxLevel && step + 1 < LADDER.size && LADDER[step + 1].first == LADDER[step].first) step++
             val (rarity, evo) = LADDER[step]
             val level = levelAt(step).coerceAtLeast(1)
             wave(counts[w], MonsterSpec(type, level, rarity, evo, bossSlots, Balance.FOOD_DROP_CHANCE, tier))
@@ -303,13 +315,15 @@ private fun dungeon(
 /**
  * Star rewards of dungeon d: 20★ = 1000 × 2^(d−1) gold, 40★ = 5 food cards of ladder step d−1 (white, green, green+, …),
  * 60★ = the dungeon's first front-row monster at ladder step d+2 (rare Snail, rare+ Skeleton, rare++ Rhino, …), at its max level.
+ * From dungeon 8 on 60★ = 1M × 2^(d−8) gold; the end game (dungeons 11-12) gives 20★ = 1M / 2M and 40★ = 10 cakes
+ * (legendary / legendary+).
  */
 private fun milestones(d: Int, roster: Roster): List<Milestone> {
     val (foodRarity, foodEvo) = LADDER[d - 1]
     val (monRarity, monEvo) = LADDER[(d + 2).coerceAtMost(LADDER.size - 1)]
     return listOf(
-        Milestone(20, gold = 1000L * (1L shl (d - 1))),
-        Milestone(40, cards = listOf(CardReward(CardType.FOOD, foodRarity, foodEvo, 5))),
+        if (d >= 11) Milestone(20, gold = 1_000_000L shl (d - 11)) else Milestone(20, gold = 1000L * (1L shl (d - 1))),
+        Milestone(40, cards = listOf(CardReward(CardType.FOOD, foodRarity, foodEvo, if (d >= 11) 10 else 5))),
         // from dungeon 8 on the monster would be legendary: gold for the legendary heroes instead
         if (d >= 8) Milestone(60, gold = 1_000_000L shl (d - 8))
         else Milestone(60, cards = listOf(CardReward(roster.front.first(), monRarity, monEvo, level = monRarity.maxLevel))),
@@ -399,6 +413,22 @@ object Dungeons {
                 front = listOf(PLANET_TITAN, ROCKET, MOON_BEAST, SATELLITE, METEOR),
                 back = listOf(UFO, NEBULA_SPRITE, MOON_RABBIT, CRESCENT_SPIRIT),
                 midBoss = BLACK_HOLE, finalBoss = SUN_TITAN,
+            ),
+        ),
+        dungeon(
+            11, "Jungle Temple", "🛕", 0xFF1E4A2A, listOf("🌴", "🛕", "🌿", "🌴", "🗿"), listOf("🌺", "✨", "🍃", "🌺"),
+            Roster(
+                front = listOf(ELEPHANT, JAGUAR, HIPPO, SLOTH, ORANGUTAN),
+                back = listOf(MONKEY, BUTTERFLY, FIRE_LILY, FLAMINGO, LADYBUG),
+                midBoss = GORILLA_KING, finalBoss = MOSQUITO_QUEEN,
+            ),
+        ),
+        dungeon(
+            12, "Mythic Olympus", "🏛️", 0xFF5A4A2A, listOf("🏛️", "☁️", "⚡", "🏛️", "☁️"), listOf("✨", "🌟", "⚡", "✨"),
+            Roster(
+                front = listOf(STONE_GIANT, CENTAUR, MINOTAUR, CYCLOPS),
+                back = listOf(HARPY, NYMPH, FIRE_SPIRIT, MUSE),
+                midBoss = HYDRA, finalBoss = DRAGON_EMPEROR,
             ),
         ),
     )

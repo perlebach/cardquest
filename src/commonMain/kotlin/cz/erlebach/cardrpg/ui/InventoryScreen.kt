@@ -289,6 +289,7 @@ private fun FeedPanel(model: AppModel, target: OwnedCard, picked: Set<Long>, sho
     val totalXp = food.sumOf { Rules.feedXp(target, it) }
     Text("🍖 Feeding", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Palette.gold)
     Text("Fed cards disappear. Your card gets their XP – the higher their level, rarity and evolution, the more (🍰 food cards: ${Balance.FOOD_XP_FACTOR}× a max-level card of their rarity!). Uncommon or better cards with the same skill (${target.type.skill.icon} ${target.type.skill.title}) give +${(Balance.SAME_SKILL_XP_BONUS * 100).roundToInt()}% XP and a chance to raise the skill level – feeding several at once adds the chances together!", color = Palette.textDim, fontSize = 13.sp)
+    if (Rules.pickyEater(target)) Text("🍽️ Legendary heroes are picky: they eat only cards with ${target.type.skill.icon} ${target.type.skill.title} and 🍰 cakes.", color = Palette.gold, fontSize = 13.sp)
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         CardFace(target.look(), width = 110.dp)

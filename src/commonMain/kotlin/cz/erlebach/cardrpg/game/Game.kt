@@ -395,7 +395,13 @@ object Rules {
     // ---------------------------------------------------------------- feeding
 
     fun canBeFood(s: GameState, target: OwnedCard, food: OwnedCard) =
-        food.id != target.id && !s.inParty(food.id)
+        food.id != target.id && !s.inParty(food.id) && acceptsFood(target, food)
+
+    /** Legendary hero cards are picky eaters: they level up only from cards with their own skill and from food cards (cakes). */
+    fun pickyEater(target: OwnedCard) = target.type.hero && target.rarity == Rarity.LEGENDARY
+
+    /** False if [target] is a [pickyEater] and [food] is neither a food card nor a card with its skill. */
+    fun acceptsFood(target: OwnedCard, food: OwnedCard) = !pickyEater(target) || food.type.food || sharesSkill(target, food)
 
     /** True if eating [food] gives [target] a chance to raise its skill level (uncommon+ card with the same skill). */
     fun sharesSkill(target: OwnedCard, food: OwnedCard) =
@@ -424,7 +430,11 @@ object Rules {
         val food = foodIds.distinct().map { s.card(it) ?: throw GameException("Card not found.") }
         if (food.isEmpty()) throw GameException("Choose some cards to feed.")
         if (target.type.food) throw GameException("Food cards can't eat other cards.")
-        food.forEach { if (!canBeFood(s, target, it)) throw GameException("${it.type.title} can't be fed (is it in your party?).") }
+        food.forEach {
+            if (!acceptsFood(target, it))
+                throw GameException("${target.fullName} eats only cards with ${target.type.skill.icon} ${target.type.skill.title} and cakes.")
+            if (!canBeFood(s, target, it)) throw GameException("${it.type.title} can't be fed (is it in your party?).")
+        }
         var fed = feedPreview(s, target, food)
         val chance = skillUpChance(target, food)
         if (chance > 0 && random.nextDouble() < chance) fed = fed.copy(skillLevel = fed.skillLevel + 1)

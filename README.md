@@ -18,7 +18,7 @@ A card RPG prototype in Kotlin + Compose Multiplatform: a Windows exe and a web 
 ./gradlew screenshots    # renders the main screens to build/screens (dev helper)
 ./gradlew stages         # prints every stage: fee, gold (and its ratio to the fee), monster counts, rarities, bosses
 ./gradlew economy       # shop hero copy vs raising bought greens with loot: replays needed per stage (env ECON_EFF, ECON_SELL, ECON_STAGES; ECON_MIX=1: idea 5b2, mixed monster rarities)
-./gradlew gauntlet       # late dungeons vs all-hero parties: lowest winning effective level per stage (env GAUNTLET_DUNGEONS=8,9,10, GAUNTLET_SKILL=5)
+./gradlew gauntlet       # late dungeons vs all-hero parties: lowest winning effective level per stage (env GAUNTLET_DUNGEONS=8,9,10, GAUNTLET_SKILL=5, GAUNTLET_RARITY=EPIC, GAUNTLET_CUTS=2, GAUNTLET_PASSIVE=2)
 ```
 
 Games are named; each one is saved automatically after every change to `~/.cardquest/saves/<name>.json`.
@@ -71,7 +71,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 |---|---|
 | `model/Model.kt` | rarities, skills, card types (base stats), **all balance formulas** (`Balance`), `OwnedCard` |
 | `battle/Battle.kt` | deterministic battle engine (turn order, targeting, skills, cooldowns, waves); UI-independent |
-| `content/Dungeons.kt` | the 10 dungeons × 20 stages, generated from a monster roster per dungeon (waves, levels, rarities, drop chances, fees) |
+| `content/Dungeons.kt` | the 12 dungeons × 20 stages, generated from a monster roster per dungeon (waves, levels, rarities, drop chances, fees) |
 | `game/Game.kt` | `GameState` (what's saved) and `Rules` (fight rewards, feeding, evolving, selling, buying, party) |
 | `game/SaveStore.kt` | named saved games (JSON) – shared logic; `SaveManager` (desktop: files, conversion of the old single save) and `BrowserSaveStore` (web: localStorage) store them |
 | `game/ServerSaves.kt` | (desktop) syncing the saved games with the home server (library from `../gameServer`) |
@@ -89,7 +89,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Card XP**: level L→L+1 needs `100 × 1.15^(L−1)` (`CARD_XP_GROWTH`; 1→2: 100, 29→30: ~5k; was 1.3 → ~155k). Hero cards need 2× more ("slow to level up"; `HERO_XP_FACTOR`).
 * **Player XP**: `100 × 1.35^(L−1)`.
 * **Dungeons** (each opens after stage 10 of the previous one): 🌲 Whispering Woods, 💎 Crystal Caves, 🌋 Fire Mountain, 🏔️ Frozen Peaks,
-  🏜️ Scorching Desert, 🌊 Sunken Reef, 🌑 Shadow Realm, 🏰 Sky Citadel, 🍭 Candy Kingdom, 🌌 Cosmic Rift. Locked dungeons are not shown. Bosses at X-5/10/15/20.
+  🏜️ Scorching Desert, 🌊 Sunken Reef, 🌑 Shadow Realm, 🏰 Sky Citadel, 🍭 Candy Kingdom, 🌌 Cosmic Rift, 🛕 Jungle Temple, 🏛️ Mythic Olympus. Locked dungeons are not shown. Bosses at X-5/10/15/20.
   Difficulty tier = `10 × (dungeon − 1) + (stage − 1)`, so 2-1 ≈ 1-11 and 3-1 ≈ 2-11.
 * **Stage generator**: monsters per wave grow with the stage number (1-1: 1, 1, 2 … X-20: 5, 5, 5), the same in every dungeon.
   How dangerous a stage is (`THREAT` by tier) is split into "effective level + log₁.₁(monsters per wave)", so 1-11 has
@@ -100,7 +100,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Monster rarity ladder**: white, green, green+, blue, blue+, blue++, purple, purple+, purple++, purple+++, legendary (`Balance.ladderStep`).
   Dungeon d shows step d−1 in stages 1-5, step d in 6-15 and step d+1 in 16-20 (mixed with one step lower; the share of the new step
   grows through the band); the X-20 boss is one step above. So: green from 1-6, green+ from 1-16, the only blue of the woods is the 1-20 boss,
-  first collectible blue in 2-16, blue+ boss in 2-20, first collectible blue+ in 3-16, blue++ boss in 3-20, …, legendary boss in 8-20, first legendary monsters in 9-16, legendary++ boss in 10-20.
+  first collectible blue in 2-16, blue+ boss in 2-20, first collectible blue+ in 3-16, blue++ boss in 3-20, …, legendary boss in 8-20, first legendary monsters in 9-16, legendary++ boss in 10-20, legendary+++ boss in 11-20, legendary++++ boss in 12-20.
   A monster whose level would be above its rarity's max level gets one more "+" instead (same strength).
   **Mixed rarities** (`MIXED_RARITIES` in `content/Dungeons.kt`, 2026-11-12): then every regular monster gets a ladder step picked evenly from white
   up to the one above, so a "rare" stage is about ¼ rare, ¼ green+, ¼ green, ¼ white. It keeps the original's strength, so lower rarities have higher
@@ -109,6 +109,12 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
   Its card drops at its own rarity's chance, keeps its level (not above the player's), can't level up, feeds and sells as a max-level card.
   **Dungeons 9–10** are the end game: `THREAT` rises steeply after tier 89 (99 → 85, 109 → 93) so they are hard even for maxed purple+++
   heroes (`./gradlew gauntlet`, skills at level 5: purple+++ wins all of dungeon 9 and most of 10 up to 10-14; 10-18..10-20 need legendary++/+++).
+  With 2 cooldown cuts and passive level 2 (`GAUNTLET_CUTS=2 GAUNTLET_PASSIVE=2`) maxed purple+++ (77.5) wins all of dungeon 10.
+  **Dungeons 11–12** (2026-11-19) are the end game after that: they don't follow `THREAT` by tier (11-1 would be as easy as 10-11) but have
+  their own ramps (`END_GAME_THREAT`: 98 → 102.5 and 99 → 103.5). Gauntlet with 2 cuts + passive 2 (best party / share of the 56 parties):
+  maxed purple+++ wins 11-1 only with the best parties (75.2, 3 %) and 11-8 by a hair (1 party); the rest of dungeon 11 needs 78–86
+  (legendary heroes being levelled or a party boosted with dropped legendary monsters; 11-20 best 85.7). Dungeon 12: best parties 79–86,
+  so maxed legendary+ (87.5) wins every stage with a good party (12-20: 76 % of the parties). Legendary skill rarity adds only ~0.5 level.
 * **Entry fee**: `5 × 2^(tier/10)` – 5 at 1-1, 10 at 1-11/2-1, 20 at 2-11/3-1, … ~1200 at 8-20.
 * **Gold**: every beaten monster gives `1 + stepValue × 1.1^(effectiveLevel − 1)` (`Balance.cardGold`), where `stepValue` doubles per ladder
   step (×2.6 per step from purple+ on), times `0.5^(tier/10)` (`Balance.goldSlowdown`, so gold grows ×2 per 10 tiers like the fees).
@@ -122,6 +128,7 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Feeding** (`Balance.sacrificeValue`): 80 % (`SACRIFICE_EFFICIENCY`) of the XP of the eaten card's level (monster XP curve, a level above the
   rarity's max counts as the max) + flat bonus = total XP of the first `5 + 5×rarity + 2×evo` levels (`Balance.sacrificeBonus`).
   It depends only on level, rarity and evo – not on how the card got there (dropped, raised or evolved; there is no lifetime XP any more).
+  **Legendary heroes are picky eaters** (`Rules.pickyEater` / `acceptsFood`): they eat only cards with their own skill (uncommon or better) and cakes.
 * **Skill level** (max 5, kept through evolution): +15 % power per level above 1 (`Skill.power`). For Shield Up the 15 % shrinks the damage that gets through
   (80 % block → 83 % → 85 % …), so it never reaches 100 %.
 * **Max skill level bonus** (level 5, `Skill.maxBonus`): Shield Up also guards every friend in the warrior's row; Fireball sets every enemy hit
@@ -149,7 +156,8 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
   with skills is still 2 stars.
   Each dungeon gives rewards at 20 / 40 / 60 stars (`DungeonDef.milestones`): `1000 × 2^(d−1)` gold, 5 food cards of ladder step d−1
   (white, green, green+, …), and the dungeon's first front-row monster at ladder step d+2 (rare Snail, rare+ Skeleton, rare++ Rhino, …); from dungeon 8 on
-  (where that would be a legendary monster) gold instead: 1M / 2M / 4M for dungeons 8 / 9 / 10.
+  (where that would be a legendary monster) gold instead: 1M / 2M / 4M / 8M / 16M for dungeons 8 / 9 / 10 / 11 / 12.
+  Dungeons 11 / 12 give 1M / 2M at 20★ and 10 legendary / legendary+ cakes at 40★.
   A dungeon with all 60 stars is shown folded up (click its title to open it).
 * **Drops**: common 25 %, uncommon 20 %, rare 15 %, epic 10 %, legendary 5 % per monster, ×0.75 per "+" (bosses drop food instead) – `monster()` in `content/Dungeons.kt`.
   Rolled the moment a monster is beaten (the card flies into the 🎁 Loot tray) and given to the player if the fight is won. Dropped cards have the monster's rarity/evo and 100 % of its level (`LOOT_LEVEL_SHARE`, was 80 %; rounded down, at least 1, capped like any card: `Balance.lootLevel`). A looted card carries the XP of its level, so it feeds exactly like the same card raised to that level by the player.
@@ -158,11 +166,11 @@ Source sets: `src/commonMain` (rules + all screens, shared), `src/desktopMain` (
 * **Boss traits** (`BossTrait`, bosses from Fire Mountain on): each has one skill that breaks it – the matching hero or any monster with that skill.
   🪨 Stone Skin (Lava Rex, Pufferfish): 10 % damage until a 🌪️ Whirlwind shatters it · 🌋 Firestorm (Lava Dragon): Fireball every other turn,
   burning = 100 % of it; a 💚 Heal (any level) puts the fire out and makes the party fire-proof · 🔨 Crusher (Yeti, Sky Whale): triple-damage hits
-  at the biggest card (or a raised shield), 10 % damage until it hits a 🛡️ shield · 📯 Commander (Frost Giant, Elder Dragon): fills the front row,
+  at the biggest card (or a raised shield), 10 % damage until it hits a 🛡️ shield (also Gorilla King) · 📯 Commander (Frost Giant, Elder Dragon, Dragon Emperor): fills the front row,
   25 % damage while its 2 back-row helpers (50 % hp, 130 % attack, 10 % from area hits) live – 🎯 Aimed Shot · 🎯 Ambusher (Sand Crocodile):
-  double hits on the lowest-HP card, 10 % damage until a 💛 Flash Heal reveals it · 🐜 Swarm (Desert Wyrm, Void Lord): one spot in the back,
+  double hits on the lowest-HP card, 10 % damage until a 💛 Flash Heal reveals it · 🐜 Swarm (Desert Wyrm, Void Lord, Mosquito Queen): one spot in the back,
   helpers everywhere else (40 % hp, 50 % attack, 10 % from single-target hits), boss 10 % while they live – 🔥 Fireball ·
-  ♻️ Regeneration (Leviathan): +25 % HP per turn until a 🗡️ Sneak Attack · ⚰️ Undying (Lich): 3 spare lives unless a 🔮 Soul Leech drains them.
+  ♻️ Regeneration (Leviathan, Honey Monster, Hydra): +25 % HP per turn until a 🗡️ Sneak Attack · ⚰️ Undying (Lich): 3 spare lives unless a 🔮 Soul Leech drains them.
   Numbers in `battle/Battle.kt` (top), layouts and `TRAIT_LEVELS` (boss level offsets) in `content/Dungeons.kt`.
 
 The `simulate` bot (greedy, auto skills, naive formation, one hero per class, at most 2 monsters of a type) buys spare copies of its heroes

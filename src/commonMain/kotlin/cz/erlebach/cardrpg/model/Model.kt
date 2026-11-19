@@ -268,6 +268,32 @@ enum class CardType(
     BLACK_HOLE("Black Hole", "🕳️", false, 58, 10, Skill.SOUL_LEECH, 0xFFD0D0E0, 0xFF101020, boss = true, trait = BossTrait.AMBUSHER),
     SUN_TITAN("Sun Titan", "☀️", false, 60, 11, Skill.FIREBALL, 0xFFFFF0B0, 0xFFE07A10, boss = true, trait = BossTrait.FIRESTORM),
 
+    // Jungle Temple
+    ELEPHANT("Elephant", "🐘", false, 56, 6, Skill.SHIELD_UP, 0xFFE8E8F0, 0xFF6A6A80),
+    HIPPO("Hippo", "🦛", false, 50, 8, Skill.WHIRLWIND, 0xFFF0E0E8, 0xFF7A5A6A),
+    ORANGUTAN("Orangutan", "🦧", false, 44, 8, Skill.WHIRLWIND, 0xFFFFE0C8, 0xFFB05A20),
+    JAGUAR("Jaguar", "🐯", false, 30, 10, Skill.SNEAK_ATTACK, 0xFFFFF0C0, 0xFFC08020),
+    SLOTH("Sloth", "🦥", false, 42, 7, Skill.SOUL_LEECH, 0xFFE8E0D0, 0xFF6A5A40),
+    MONKEY("Monkey", "🐒", false, 20, 9, Skill.AIMED_SHOT, 0xFFF8E8D0, 0xFF8A5A30),
+    LADYBUG("Ladybug", "🐞", false, 20, 9, Skill.AIMED_SHOT, 0xFFFFE0E0, 0xFFC02020),
+    FIRE_LILY("Fire Lily", "🌺", false, 20, 9, Skill.FIREBALL, 0xFFFFE0E8, 0xFFD03A6A),
+    BUTTERFLY("Butterfly", "🦋", false, 24, 5, Skill.FLASH_HEAL, 0xFFD8E8FF, 0xFF3A6AD0),
+    FLAMINGO("Flamingo", "🦩", false, 24, 5, Skill.HEAL, 0xFFFFE8F0, 0xFFE07AA0),
+    GORILLA_KING("Gorilla King", "🦍", false, 60, 10, Skill.WHIRLWIND, 0xFFE0E0E8, 0xFF3A3A4A, boss = true, trait = BossTrait.CRUSHER),
+    MOSQUITO_QUEEN("Mosquito Queen", "🦟", false, 58, 11, Skill.SOUL_LEECH, 0xFFE8F0D8, 0xFF4A5A2A, boss = true, trait = BossTrait.SWARM),
+
+    // Mythic Olympus
+    MINOTAUR("Minotaur", "🐂", false, 54, 8, Skill.WHIRLWIND, 0xFFF0D8C8, 0xFF7A3A1A),
+    CENTAUR("Centaur", "🏇", false, 32, 10, Skill.SNEAK_ATTACK, 0xFFF0E8D8, 0xFF8A6A3A),
+    STONE_GIANT("Stone Giant", "⛰️", false, 58, 6, Skill.SHIELD_UP, 0xFFE8E8E0, 0xFF6A6A5A),
+    CYCLOPS("Cyclops", "🧿", false, 44, 8, Skill.SOUL_LEECH, 0xFFD8E8FF, 0xFF1A3A8A),
+    HARPY("Harpy", "🪶", false, 20, 10, Skill.AIMED_SHOT, 0xFFF0E8F8, 0xFF6A4A8A),
+    FIRE_SPIRIT("Fire Spirit", "🔥", false, 20, 10, Skill.FIREBALL, 0xFFFFE8C0, 0xFFD04A10),
+    NYMPH("Nymph", "🍃", false, 24, 5, Skill.FLASH_HEAL, 0xFFE0F8D8, 0xFF3A8A3A),
+    MUSE("Muse", "🎻", false, 24, 5, Skill.HEAL, 0xFFFFF0E0, 0xFFA06A3A),
+    HYDRA("Hydra", "🐲", false, 62, 11, Skill.SOUL_LEECH, 0xFFD8F8D8, 0xFF1A6A3A, boss = true, trait = BossTrait.REGENERATION),
+    DRAGON_EMPEROR("Dragon Emperor", "👑", false, 62, 12, Skill.FIREBALL, 0xFFFFF0C0, 0xFFB01A1A, boss = true, trait = BossTrait.COMMANDER),
+
     // food (its skill is never used)
     FOOD("Yummy Cake", "🎂", false, 10, 1, Skill.HEAL, 0xFFFFE8F0, 0xFFD06A8A, art = "cake", food = true);
 
